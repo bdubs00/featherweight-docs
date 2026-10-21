@@ -62,7 +62,9 @@ When a tree reaches a limit, the run that sees it first appends `fw.budget.excee
 
 ## Admission
 
-The budget bounds one run. Admission bounds the number of root runs that one process takes on. `maxRuns` bounds the root runs that work at the same time, and `maxQueuedRuns`, 64 by default, bounds the root runs that wait behind them. When both are full, a new start gets `fw.ErrSaturated`, and the native API answers 429 with `Retry-After`. A child run takes no root place, because `spawn.maxRunning` and the budget of its tree bound it. See [The run lifecycle](../concepts/run-lifecycle.md#admission).
+The budget bounds one run. Admission bounds the number of root runs that one process takes on. `maxRuns` bounds the root runs that work at the same time, and `maxQueuedRuns`, 64 by default, bounds the root runs that wait behind them.
+
+When both are full, a new start or a branch gets `fw.ErrSaturated`, and the native API answers 429 with `Retry-After`. A follow-up and a decision on an accepted run are never refused. A child run takes no root place, because `spawn.maxRunning` and the budget of its tree bound it. See [The run lifecycle](../concepts/run-lifecycle.md#admission).
 
 ## The loop guard
 

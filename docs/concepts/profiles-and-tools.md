@@ -86,7 +86,7 @@ The package `tools/builtin` registers each tool in `init` through `fw.RegisterTo
 | `bash` | Runs a command in one shell per run, with the environment of a tool process | destructive |
 | `files` | Views, creates, and edits files under the root of the workspace | none |
 | `http` | Fetches a URL that matches a glob of `tools.http.allow`, with GET or POST | read-only, idempotent, parallel-safe |
-| `memory` | Keeps notes between runs under `/memories`, in the scope of the run | none |
+| `memory` | Keeps notes between runs under `/memories`, in the scope of the run | none. Each call of `view`, `create`, `delete`, and `rename` is idempotent (`fw.CallIdempotency`) |
 | `recall` | Searches and reads notes, earlier runs, workspace files, and skills | read-only, idempotent, parallel-safe |
 | `skill` | Lists the skills, or reads one skill with its files | read-only, idempotent, parallel-safe |
 | `clock` | Gives the time in the zone of the run and the working time left | read-only, idempotent, parallel-safe |
@@ -130,7 +130,11 @@ The package `env` gives an agent packages on the durable volume. The block `envi
 
 The block `harness` of `fw.yaml` makes the kernel host an agent program that people use on their laptops: `kind: opencode` or `kind: claude-code`. Every run of the process then becomes a session of that program instead of a run of the turn loop. The kernel keeps what makes a run durable: one ledger, one policy, one approval surface, and an idle run while a person decides. The program asks the kernel about each tool call, and the kernel answers from the policy of the run. A call that the policy asks about becomes `fw.approval.requested`, and after the decision, also after a cold boot, the kernel continues the same session. `home` names the directory of the sessions, `/workspace/.harness` under ax. The build tag `harness` links the package. See [section 19](../design/kernel-architecture.md#19-hosted-harnesses).
 
-If its profile allows the tool `memory`, a hosted run gets the memory as a run of the turn loop does. The host reads that from `tools.builtin` and the tool list of the resolved profile, and it ignores the tool lists of ancestor profiles. A profile that allows `recall` alone gets only the tool `recall` of the server, without the memory section and the index. For a run whose profile allows `memory`, the added system text holds the memory section and `fw.ContextNote`. Between the two, a note names the tools of the memory server. It follows the instructions of the run and never holds a note. The index of the notes goes as data, in a `<context source="memory">` block, to the start of the first prompt of the session. The `fw.harness.event` of the kind `fw.prompt` for that prompt records `context: true`, so a resumed session never gets the block twice.
+If its profile allows the tool `memory`, a hosted run gets the memory as a run of the turn loop does. The host reads that from `tools.builtin` and the tool list of the resolved profile, and it ignores the tool lists of ancestor profiles. A profile that allows `recall` alone gets only the tool `recall` of the server, without the memory section and the index. For a run whose profile allows `memory`, the added system text holds the memory section and `fw.ContextNote`. When the session has the memory server, one sentence between the two names its tools. The text follows the instructions of the run and never holds a note.
+
+The index of the notes goes as data, in a `<context source="memory">` block, to the start of the first prompt with text of the session. Before that prompt goes out, the host records the `fw.harness.event` of the kind `fw.brief`, with `context: true` when the prompt holds the index. A stop, a resumed session, and a cold boot therefore never send the block twice. A message without text records no `fw.brief`, so the block waits for the first prompt with text. When the index leaves notes out, its last line says how many.
+
+### The memory server
 
 The native API serves the MCP server `fw-memory` on the loopback route `/v1/harness/memory/<secret>`, with four tools:
 
@@ -139,11 +143,40 @@ The native API serves the MCP server `fw-memory` on the loopback route `/v1/harn
 - `remember` writes the whole text of a note, with an optional hash for a compare-and-swap.
 - `forget` deletes one note.
 
-Claude Code gets the server in `--mcp-config` and names its tools `mcp__fw-memory__recall`, `mcp__fw-memory__list`, `mcp__fw-memory__remember`, and `mcp__fw-memory__forget`. opencode gets it in the block `mcp` of `OPENCODE_CONFIG_CONTENT` and names them `fw-memory_recall`, `fw-memory_list`, `fw-memory_remember`, and `fw-memory_forget`. The policy rule `*fw-memory*` matches both. A rule on one tool must use the name that the harness reports: `mcp__fw-memory__remember: path=private/*` for Claude Code, and `fw-memory_remember: path=private/*` for opencode. A rule on the tools `memory` or `recall` of the turn loop covers no hosted call. `recall` and `list` are read-only, and `remember` and `forget` have no flag. If the profile of the run does not allow `memory`, the host denies a call of the server before the policy decides. A profile that allows `recall` alone keeps the tool `recall` of the server.
+Claude Code gets the server in `--mcp-config`. It names the tools `mcp__fw-memory__recall`, `mcp__fw-memory__list`, `mcp__fw-memory__remember`, and `mcp__fw-memory__forget`. opencode gets the server in the block `mcp` of `OPENCODE_CONFIG_CONTENT`. It names the tools `fw-memory_recall`, `fw-memory_list`, `fw-memory_remember`, and `fw-memory_forget`. The ledger and the approvals keep these names. `recall` and `list` are read-only, and `remember` and `forget` have no flag.
 
-The server makes only a call that the policy of a run allowed. The host allows a call of a memory tool in the hook of Claude Code, or in its answer to a permission of opencode. At that moment it arms the call for its run. The call that reaches the server must match an armed call by tool and exact input, and an armed call expires after two minutes. The server makes the call in the memory scope of that run. Each write appends `fw.memory.changed` to the ledger of the run, without the text.
+The policy sees one name for each tool in both harnesses: `fw-memory.recall`, `fw-memory.list`, `fw-memory.remember`, and `fw-memory.forget`. One rule therefore fits both, such as `fw-memory.remember: path=/memories/private/*`, and the rule `*fw-memory*` matches each tool. The host also asks the policy under the name of the tool of the turn loop that does the same work (`memPolicy` in `harness/memory.go`). That name is `memory` for `remember`, `forget`, and `list`, with the field `command` set to `create`, `delete`, or `view`, and `recall` for `recall`. A verdict under that name counts when a rule gave it. A stricter `ask` or `deny` wins, so `ask: [memory]` holds for a hosted call, and an allow wins over a verdict that only the default gave.
 
-The server is a route of the native API. `fw run` serves no route, so a harness under `fw run` gets the memory section and the index but no working memory server. If `tls.provider` is set, or if the native surface is off, the same holds. The log says nothing about it (`memBase` in `harness/memory.go`). See [section 19.10](../design/kernel-architecture.md#1910-memory) and the limits in [section 19.9](../design/kernel-architecture.md#199-limits).
+Before it asks the policy, the host turns the input of a memory call into its canonical input. That is a JSON object with only the fields of the input schema of the tool. Each field has its exact name, appears once, and has its type. The path of a note takes its full form, such as `/memories/notes.md` for `notes.md`, and a null value of an optional field counts as absent.
+
+A call without an input gets a deny. So does a call with a key that the schema does not name, a key twice, or a value of the wrong type. The reason of the deny names the key. The policy decides on the canonical input, because the MCP SDK does not check the arguments of a call against the schema.
+
+The host also denies these calls before the policy decides:
+
+- a call of `remember`, `forget`, or `list` when the profile of the run does not allow `memory` (`memRights` in `harness/memory.go`)
+- a call of `recall` when the profile allows neither `memory` nor `recall`
+- a `recall` with a file ref that has a hidden part
+- a `recall` with a file ref that resolves inside the home of the harness, the home of `fw`, the ledger, or the configuration file
+- a tool whose name differs from a tool of the server only by case, such as `mcp__FW-Memory__remember`
+- a tool with the prefix of the server that is not one of its four tools, such as `fw-memory_view`
+
+A run without the tool `recall` searches and reads only notes through the server (`memGet` in `harness/memory.go`).
+
+### Arming
+
+The server makes only a call that the policy of a run allowed. The host allows a memory call in the hook of Claude Code, or in its answer to a permission of opencode. At that moment it arms the call: it marks the call as allowed for its run, with its canonical input. It never arms a call whose input it did not see: a hook without `tool_input` gets a deny. So does a permission of opencode that comes before the input of its call. Its reason asks the harness to make the call again.
+
+For a call that a person decided, the host arms the approved call, with the tool and the input of the approval. It does so only when the call of the request is that call. A decision answers one call once.
+
+The server turns the arguments of each call into their canonical input too. It takes the armed call with the same tool and the same bytes. Before it makes the call, it checks the rights of the run again: `remember`, `forget`, and `list` need the tool `memory`, and `recall` needs `memory` or `recall`. It makes the call in the memory scope of the run, which the kernel builds from the run info, never from the caller.
+
+An armed call ends with its run, and it expires after two minutes. Two runs never hold the same armed call. A second run that asks for it gets a deny, and the reason asks the harness to try again. Each write appends `fw.memory.changed` to the ledger of the run, without the text.
+
+### The name fw-memory and a missing server
+
+The name `fw-memory` belongs to `fw`, because a server of that name gets the text of each note and each query. The settings of each Claude Code process reject an entry of that name in the `.mcp.json` of the repository with `disabledMcpjsonServers`. The design says that the effect of this setting on the server of `--mcp-config` is not verified against a running Claude Code. For each session of opencode, the host reads the configuration that opencode resolved for the directory of the session, with `GET /config`. Its entry `fw-memory` must be the inline entry of the kernel and nothing more. Otherwise each memory call of the session gets a deny, and the host logs a warning.
+
+The server is a route of the native API on a plain HTTP listener. `fw run` serves no route, and neither does a listener with `tls.provider` or a configuration without the surface `native` (`memBase` in `harness/memory.go`). A run with memory then gets the memory section and the index without the server. The host logs one warning, and the added system text and the index name no tool of the server. opencode serve waits up to 30 seconds for the route at a cold boot, and one second in a process that serves nothing. See [section 19.10](../design/kernel-architecture.md#1910-memory) and the limits in [section 19.9](../design/kernel-architecture.md#199-limits).
 
 ## Outcomes
 
@@ -170,6 +203,7 @@ A profile or a request can carry an `outcome` block with `rubric`, `grader`, and
 - `featherweight-kernel/tools/builtin/files.go`
 - `featherweight-kernel/tools/builtin/http.go`
 - `featherweight-kernel/tools/builtin/memory.go`
+- `featherweight-kernel/fw/callidem.go`
 - `featherweight-kernel/tools/builtin/recall.go`
 - `featherweight-kernel/fw/runcontext.go`
 - `featherweight-kernel/tools/builtin/skill.go`

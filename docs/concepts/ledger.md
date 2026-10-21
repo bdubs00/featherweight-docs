@@ -83,19 +83,25 @@ The first durable append of a run also syncs the directory of the run and the ro
 
 `Flush` syncs the outstanding writes and keeps the ownership. `Close` flushes, ends the watches, and releases the ownership even when the flush fails. A closed ledger stays closed: each later call gets `fw.ErrLedgerClosed`. The lock is a local fence on one file system, not a distributed lease. Give each worker a home and a ledger of its own.
 
+A server waits for the lock at boot (`newServeAgent` in `cli/serve.go`). If another `fw` process holds it, `fw serve` and the ax boot try the open again every half second for up to 30 seconds. They log a warning every five seconds, and then exit with an error that asks to stop the other process. A `fw run` that a person started through `ax ssh` during a slow boot is such a process. `fw run` and `fw replay` beside a running server still fail at once with `fw.ErrLedgerLocked`.
+
 `OpenFileLedgerReadOnly` opens an existing root without the writer lock. It never repairs, creates, or syncs a file, and it reads complete lines only. A later `Read` sees the later appends of the writer, but the reader gets no snapshot across runs and no watch. `fw events` and `fw replay --ledger` use this mode, so both read beside a running server. A replay still needs the writer lock of the ledger that receives the new run. See [fw commands](../reference/fw-commands.md#fw-replay).
 
 ### Fail-stop on a storage failure
 
-The first failure of a ledger append, or of a read of a run for its driver, stops the process from writing (`failStorage` in `fw/lifecycle.go`). From that moment:
+Only a storage fault stops the process from writing (`failStorage` in `fw/lifecycle.go`). A storage fault is an append, a flush, or a read of the ledger that fails, or an append after `Close`. Any other error of a driver fails the run of that driver alone with `fw.run.finished`. A broken pipe of a hosted harness and an error of a runner are such errors. From the first storage fault:
 
-- The kernel cancels the local work and blocks every write. A start, a follow-up, a decision, a budget change, and a cancel get `fw.ErrStorageUnavailable`, and the native API answers 503.
+- The kernel cancels the local work and blocks every write. A new start, a follow-up, a decision, a budget change, a branch, and a cancel get `fw.ErrStorageUnavailable`, and the native API answers 503.
+- The log gets one Error line, `storage failure; execution blocked until restart`, with the cause and the time.
 - `Agent.Ready` is false, and `/readyz` answers 503 with `storage failed; execution blocked until restart`.
-- `Agent.RuntimeError` keeps the cause.
+- `Agent.RuntimeError` keeps the cause, and `Agent.RuntimeErrorSince` keeps its time. The gauge `fw_storage_blocked` is 1 until the process restarts.
+- `GET /v1/status` reports `blocked: true`, the cause without secrets in `blockedReason`, and `idle: true` since the failure.
 - A read of an open run shows the field `blocked` (`Run.Blocked`) beside the last recorded state. The field lives in memory only, never in the ledger.
 - A caller that waits for a run gets the storage error.
 
-The kernel never retries an append whose result is unknown, because a failed append can still have reached the disk. It also invents no terminal event. Repair the storage and restart the process. The restart rebuilds every run from what reached the ledger, and an interrupted tool call follows the resume rules. An external effect that was in flight can still finish, and the kernel does not roll it back. A process that is blocked cannot append `fw.run.suspended` at a later `SIGTERM`. See [section 5.6](../design/kernel-architecture.md#56-process-duties).
+A start whose `fw.run.queued` reached the ledger before the failure stays accepted: the start returns the run, and the restart resumes it. The kernel never retries an append whose result is unknown, because a failed append can still have reached the disk. It also invents no terminal event. Repair the storage and restart the process. Under ax, the suspend controller of the front suspends the blocked Task, and the next request restores a fresh process.
+
+The restart rebuilds every run from what reached the ledger, and an interrupted tool call follows the resume rules. An external effect that was in flight can still finish, and the kernel does not roll it back. A process that is blocked cannot append `fw.run.suspended` at a later `SIGTERM`. See [section 5.6](../design/kernel-architecture.md#56-process-duties).
 
 ## Projections
 
@@ -111,9 +117,13 @@ The kernel ships more observers: `metrics` for Prometheus, `bus` for the egress,
 
 ## Resume
 
-At boot, `rebuild` in `fw/resume.go` reads the index, projects every run, and finds the runs whose state is not terminal. For each one, `resume` appends `fw.run.resumed` with the sequence number of the last event and starts a driver. The driver reads the log and continues from the last complete point: a model request without an answer goes out again, and a tool call without a result follows the resume rules. A run that waits for a decision stays idle until the decision. The rules are on [The run lifecycle](../concepts/run-lifecycle.md#resume-from-the-ledger-at-boot), and the design document gives them in [section 4.5](../design/kernel-architecture.md#45-resume).
+At boot, `rebuild` in `fw/resume.go` reads the index, projects every run, and finds the runs whose state is not terminal. For each one, `resume` appends `fw.run.resumed` with the sequence number of the last event and starts a driver. The driver reads the log and continues from the last complete point. A model request without an answer goes out again, and a tool call without a result follows the resume rules. A run that waits for a decision stays idle until the decision.
 
-A branch in another process that never started, and a child whose start was open, are also handled at boot. The kernel records such a run as failed with the reason, so nothing is lost without a trace.
+A tool whose calls differ implements `fw.CallIdempotency`. Its method `IdempotentCall` decides from the input of each call whether the call runs again without an approval. It takes the place of the flag `idempotent` of the tool. The tool `memory` uses it. The rules are on [The run lifecycle](../concepts/run-lifecycle.md#resume-from-the-ledger-at-boot), and the design document gives them in [section 4.5](../design/kernel-architecture.md#45-resume).
+
+A branch in another process that never started, and a child whose start was open, are also handled at boot. The look, a read of such a child at its member, follows the child, or records it as failed or lost with the reason. Nothing is therefore lost without a trace.
+
+Only a start that the spawner refused, or that a cancel ended, abandons the process of a child. A shutdown or a storage failure that cuts the start of a child keeps that process. It records nothing, because the ledger is closing or failing. The first record of the child stays the truth. The look after the restart finds the child, and the approved rerun of `spawn_task` takes that child instead of a second one. See [section 11.9](../design/kernel-architecture.md#119-child-runs-and-child-tasks).
 
 ## Replay
 
@@ -139,11 +149,19 @@ The request has five fields:
 
 The copied events get the id of the branch, new event ids, and the time of the copy. The `fw.run.queued` of the branch names the person who branched and carries the metadata `fw.forkOf`, the id of the source, and `fw.forkSeq`. It also holds `kept`, the number of copied events, so the branch counts its own work only. The branch has no parent, and the source does not change.
 
+A branch is new work, so it takes its place in the backlog before its first append. It holds the place through the copy (see [admission](../concepts/run-lifecycle.md#admission)). A full backlog therefore appends nothing of the branch, and the ledger never holds a part of a branch.
+
 A branch goes on as a resumed run does. A model request without an answer is sent again, and a pending approval waits for its decision. An `input` follows the kept events as a follow-up, so a branch of a finished run goes on in another direction. Without an `input`, a branch that keeps the end of a finished run stays finished. The kept events are the same bytes as in the source. The branch therefore keeps the prompt cache prefix of the provider up to the branch point.
 
 A local branch runs in the same process. It shares the workspace of the process, and with `tools.files.perRun` it works in the directory of its source. The source and its branches see each other's changes.
 
-A remote branch runs in another process. `spawn: true` asks the `Spawner` of the agent, which must be a `Forker`. `Place` creates the process, a child Task with the driver `ax`, and names it at once. The kernel records the branch in the source as a child in `fw.run.child`. The route answers 202 with the branch as `queued`, with `member` set. In the background, `Branch` sends the kept events through `POST /v1/runs/fork` once the process runs. That route serves a trusted caller only: the static token or a workload. The source records the branch again with `started`. If the process does not take the branch, the kernel records a failed run under the id of the branch, with the reason. The driver `ax` then deletes the empty child Task. The branch has the workspace of its own Task, a fresh copy of the Workspace of the parent Task. The design document gives the rules in [section 4.7](../design/kernel-architecture.md#47-branches).
+A remote branch runs in another process. `spawn: true` asks the `Spawner` of the agent, which must be a `Forker`. Before `Place`, the kernel checks the shutdown and the storage of the source. During a shutdown, `Fork` returns `fw.ErrClosed`, and after a storage failure `fw.ErrStorageUnavailable`, and no process exists for the branch. `Place` creates the process, a child Task with the driver `ax`, and names it at once.
+
+The kernel records the branch in the source as a child in `fw.run.child`. If that record fails, the source sends nothing and abandons the placed process before `Fork` returns, for at most 30 seconds. A process that exits after `Fork` therefore leaves no empty child Task without a record. The route answers 202 with the branch as `queued`, with `member` set.
+
+In the background, `Branch` sends the kept events through `POST /v1/runs/fork` once the process runs. That route serves a trusted caller only: the static token or a workload. The source records the branch again with `started`.
+
+If the process does not take the branch, the kernel records a failed run under the id of the branch, with the reason. The driver `ax` then deletes the empty child Task. The branch has the workspace of its own Task, a fresh copy of the Workspace of the parent Task. The design document gives the rules in [section 4.7](../design/kernel-architecture.md#47-branches).
 
 ## Egress cursors
 
@@ -171,6 +189,8 @@ A cursor is a small JSON file under `<root>/.egress/<route>/<run>.json`, with bo
 - `featherweight-kernel/fw/projection.go`
 - `featherweight-kernel/fw/replay.go`
 - `featherweight-kernel/fw/fork.go`
+- `featherweight-kernel/fw/spawn.go`
+- `featherweight-kernel/fw/callidem.go`
 - `featherweight-kernel/fw/busio.go`
 - `featherweight-kernel/fw/resume.go`
 - `featherweight-kernel/fw/kernel.go`
@@ -180,10 +200,13 @@ A cursor is a small JSON file under `<root>/.egress/<route>/<run>.json`, with bo
 - `featherweight-kernel/fw/registry.go`
 - `featherweight-kernel/harness/harness.go`
 - `featherweight-kernel/cli/verbs.go`
+- `featherweight-kernel/cli/serve.go`
+- `featherweight-kernel/surface/view/status.go`
+- `featherweight-kernel/telemetry/metrics.go`
 - `featherweight-kernel/cli/cli.go`
 - `featherweight-kernel/surface/native/native.go`
 - `featherweight-kernel/examples/fw.yaml`
-- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 4, 5.1, 5.6, and 15)
+- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 4, 5.1, 5.6, 11.5, 11.9, and 15)
 - `featherweight-kernel/docs/KERNEL_MAP.md` (section 2)
 - `featherweight-workbench/docs/PRODUCT_DIRECTION.md` (section 3.3)
 - `featherweight-workbench/surface/mcp/tools.go`

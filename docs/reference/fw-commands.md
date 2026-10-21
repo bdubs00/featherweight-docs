@@ -80,6 +80,8 @@ fw serve [flags]
 | `-port port` | Listen on this port on every interface. It wins over `-listen` | none |
 | `-metadata-port port` | Serve the ax metadata endpoints on this loopback port. `0` picks a free port | `8099` |
 
+At boot, the verb takes the writer lock of the file ledger. If another `fw` process holds it, the verb tries again every half second for up to 30 seconds. It logs a warning every five seconds. Then it exits with an error that asks to stop the other process, such as `fw run` started through `ax ssh`. `fw run` and `fw replay` beside a server do not wait.
+
 Under ax the listener is `:80` unless `-listen` or `-port` says otherwise. Under ax, `spec.command` of the Task decides what runs after the boot: nothing serves, `fw run` and `fw serve` run in process, and any other command runs as a supervised child. Without a command, `FW_GOAL` starts one run.
 
 ## fw mcp
@@ -100,7 +102,15 @@ Writes a starter `fw.yaml`, `prompts/default.md`, and the directories `agents` a
 fw init [<dir>]
 ```
 
-The verb has no flags of its own. The directory is `.` by default. The starter `fw.yaml` names the model `anthropic/claude-opus-5-5`, the effort `high`, and the built-in tools `bash`, `files`, `http`, `memory`, `recall`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`.
+The verb has no flags of its own. The directory is `.` by default. The starter `fw.yaml` sets no model, because a paid model is never a built-in choice. It shows one commented `model` line for each provider: `anthropic/claude-opus-5-5`, `gemini/gemini-3.8-flash`, and `openai/<model>`. It sets the effort `high`, leaves `tools.memory.scope` empty, and names the built-in tools `bash`, `files`, `http`, `memory`, `recall`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`.
+
+After the paths it wrote, the verb prints this line and the next steps:
+
+```
+A model must be set: without model in fw.yaml, FW_MODEL, or the model of a profile, fw refuses every run.
+```
+
+Set a model before the first run. Remove the `#` of one `model` line in `fw.yaml`, or export `FW_MODEL`.
 
 ## fw doctor
 
@@ -114,15 +124,25 @@ fw doctor [flags]
 |---|---|---|
 | `-timeout limit` | The limit of each check that reaches a provider or a server | `10s` |
 
-The memory check is the last line. It names the scope, the index of this build, and the count of the notes of the profile `default`:
+Each line starts with `ok`, `warn`, or `FAIL`. A `FAIL` line is a problem, and the exit code is then `1`. A `warn` line names a risk of a setup that works, and the exit code stays `0`. Two checks warn. The first is a configuration without a model, because the process then refuses every run:
+
+```
+warn  model: none configured, so this process serves and refuses every run until model in fw.yaml, FW_MODEL, or the profile of a run names one; there is no default model
+```
+
+The memory check is the last check. It names the scope, the index of this build, and the count of the notes of the profile `default`:
 
 ```
 ok    memory: scope agent, index scan, 3 notes of the profile default
 ```
 
-The index is `scan`, or `sqlite-fts5` in a build with the tag `memory_sqlite`. If the store does not open or cannot list its notes, the line reads `FAIL  memory:` with the error. The ledger check writes into `<root>/.doctor`, a directory of its own, so it runs beside a server.
+Under the scope `principal`, the line counts the notes of all people together and the notes of the runs without a principal. For example: `4 notes of 2 people in the profile default, and 1 note of its runs without a principal`. Inside an ax Task, an empty `tools.memory.scope` counts as `principal`, as `ax.ApplyToConfig` sets it for `fw serve`. The second warning is the scope `agent` inside an ax Task, because each person then reads the notes of other people:
 
-If any check fails, the exit code is `1`.
+```
+warn  memory: tools.memory.scope is agent in an ax Task, so each person who runs a profile reads the notes that the runs of other people wrote; set principal unless one person uses the Task
+```
+
+The index is `scan`, or `sqlite-fts5` in a build with the tag `memory_sqlite`. If the store does not open or cannot list its notes, the line reads `FAIL  memory:` with the error. The ledger check writes into `<root>/.doctor`, a directory of its own, so it runs beside a server.
 
 ## fw agents
 

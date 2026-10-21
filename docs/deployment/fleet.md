@@ -75,7 +75,7 @@ env:
 
 The two replicas share the cookie key and the grant key of the Secret `fw-front-keys`, and the grants on one volume, so a connection and a token request can land on either. The Deployment carries the annotation `fw.dev/front-config` with a hash of the rendered configuration, so a change of the ConfigMap restarts every replica. Two replicas with two configurations fight over a pool. Two Services expose the front: `fw-front` for `/ui`, `/v1`, and `/.well-known`, and `fw-front-mcp` with the label `fw.dev/mcp: front` and the `appProtocol` `agentgateway.dev/mcp`.
 
-At every interval the front lists the Tasks, reads the queues, and suspends a running Task that stayed idle for `suspendAfter`. Before a suspend it reads `GET /v1/status` of the Task once through the router. A job wakes the sleeping Tasks that serve its profile, and so do jobs that wait in a queue. See [sections 4.12](../design/workbench-architecture.md#412-the-suspend-controller) and [4.13](../design/workbench-architecture.md#413-queue-depth).
+At every interval the front lists the Tasks, reads the queues, and suspends a running Task that stayed idle for `suspendAfter`. Before a suspend it reads `GET /v1/status` of the Task once through the router. It also suspends a Task whose status says `blocked` after a storage failure. The next request restarts that Task from its ledger (see [The fleet](../concepts/fleet.md#idle-and-the-suspend-controller)). A job wakes the sleeping Tasks that serve its profile, and so do jobs that wait in a queue. See [sections 4.12](../design/workbench-architecture.md#412-the-suspend-controller) and [4.13](../design/workbench-architecture.md#413-queue-depth).
 
 ## A worker
 
@@ -257,6 +257,7 @@ A later change of the images or of the configuration of the front goes through `
 - `featherweight-workbench/docs/ARCHITECTURE.md` (sections 4, 13, and 14)
 - `featherweight-workbench/fleet/config.go`
 - `featherweight-workbench/fleet/types.go`
+- `featherweight-workbench/fleet/suspend.go`
 - `featherweight-workbench/pools/config.go`
 - `featherweight-workbench/sources/config.go`
 - `featherweight-workbench/cmd/fw-workbench/pools.go`

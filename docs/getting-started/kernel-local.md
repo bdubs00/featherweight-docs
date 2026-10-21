@@ -48,9 +48,15 @@ It writes and creates these paths, and it never overwrites a file:
 | `agents/` | one profile file per agent, empty at first |
 | `skills/` | one directory with a `SKILL.md` file per skill, empty at first |
 
-`fw init <dir>` writes into another directory. The starter sets `home: .`, so the directory of `fw.yaml` is the home of the process. It also sets `model: anthropic/claude-opus-5-5`, `effort: high`, the built-in tool list, the budget, `compaction.at`, the time keys, and one profile named `default`. The kernel loads the file at once, so a broken starter fails here and not later.
+`fw init <dir>` writes into another directory. The starter sets `home: .`, so the directory of `fw.yaml` is the home of the process. It also sets `effort: high`, the built-in tool list, the budget, `compaction.at`, the time keys, and one profile named `default`. The kernel loads the file at once, so a broken starter fails here and not later.
 
-To use a local server instead of the Claude API, change the model and add the endpoint:
+The starter sets no model, because a paid model is never a built-in choice. It shows one commented `model` line for each provider, and `fw init` prints `A model must be set`. Set a model before the first run. Remove the `#` of one `model` line in `fw.yaml`, or export `FW_MODEL`:
+
+```sh
+export FW_MODEL=anthropic/claude-opus-5-5
+```
+
+To use a local server instead of the Claude API, set the model and add the endpoint:
 
 ```yaml
 model: openai/qwen3-32b
@@ -70,7 +76,7 @@ export ANTHROPIC_API_KEY=...
 ./bin/fw doctor
 ```
 
-It prints one line per check, `ok` or `FAIL`. If any check fails, it exits with 1. Every check runs on its own, so one failure does not hide the others. `-timeout` bounds each check that reaches a provider or a server, 10 seconds by default. The lines are these:
+It prints one line per check, `ok`, `warn`, or `FAIL`. If any check fails, it exits with 1. A `warn` line names a risk of a setup that works, such as a configuration without a model, and the exit code stays 0. Every check runs on its own, so one failure does not hide the others. `-timeout` bounds each check that reaches a provider or a server, 10 seconds by default. The lines are these:
 
 | Line | What it checks |
 |---|---|
@@ -87,6 +93,7 @@ It prints one line per check, `ok` or `FAIL`. If any check fails, it exits with 
 | `tokens`, `telemetry`, `bus` | the token broker, the OTLP export, and the bus driver |
 | `ledger` | the ledger appends one event and reads it back |
 | `skills` | each skills directory exists and loads |
+| `memory` | the scope and the index of the memory, and the count of the notes of the profile `default` |
 
 If a local server does not know the name you set, the `model` line names close matches.
 

@@ -27,14 +27,16 @@ A key path maps to a variable in upper snake case: `bus.url` is `FW_BUS_URL`, an
 |---|---|---|
 | `listen` | The listen address. ax runner mode forces `:80` | `:8080` |
 | `home` | Where runs, memory, agents, and skills live | `/workspace/.fw` under ax, else `./.fw` |
-| `model` | The `provider/model` selector of every run | none, and a run without a model is refused |
+| `model` | The `provider/model` selector of every run. `fw init` and `examples/fw.yaml` show one commented line for each provider | none, and a run without a model is refused |
 | `models` | Named selectors that a profile can reference. `FW_MODELS_<NAME>` | `{}` |
 | `effort` | `low`, `medium`, `high`, `xhigh`, or `max` | `high` |
 | `node` | The name of this process in every ledger event | `ax:<atespace>/<task>` under ax, else `<host>:<port>` |
 | `prices` | Per-million-token prices by selector: `{input, output}` | `{}` |
 | `surfaces` | The surfaces to serve | `[native, a2a, metrics]`, plus `mcp` in `fw-workbench` |
 | `maxRuns` | Root runs that work at once. `FW_MAX_RUNS` | `16`, or `1` under ax |
-| `maxQueuedRuns` | Root runs that the process admits beyond `maxRuns`, which wait for a working slot. `0` takes the default. A child run takes no place here: the `spawn` limits bound it. A full backlog gives 429. `FW_MAX_QUEUED_RUNS` | `0`, which is `64` |
+| `maxQueuedRuns` | Root runs that the process admits beyond `maxRuns`, which wait for a working slot. `0` takes the default. A child run takes no place here: the `spawn` limits bound it. A full backlog refuses a new start or a branch with 429, and never a follow-up or a decision. `FW_MAX_QUEUED_RUNS` | `0`, which is `64` |
+
+There is no default model, because a paid model is never a built-in choice. Remove the `#` of one `model` line in `fw.yaml`, or set `FW_MODEL`. Without a model, `fw` refuses every run, and `fw doctor` prints a `warn` line.
 
 ## tls
 
@@ -131,7 +133,7 @@ The OpenAI adapter reads nine options: `reasoning`, `maxTokensField`, `authHeade
 | `http.allow` | URL globs the `http` tool can fetch | `[]` |
 | `bash.env` | Variables that every command starts with. `FW_TOOLS_BASH_ENV_<NAME>` | `{}` |
 | `bash.timeout` | One command. `0` leaves the limit to `tools.limits` | `0s` |
-| `memory.scope` | The scope of the tools `memory` and `recall`. `agent`: notes per profile under `<home>/memory/agents/<agent>`. `principal`: notes per person and profile under `<home>/memory/principals/<agent>/<hash>`. `shared`: one set under `<home>/memory/shared` | `agent` |
+| `memory.scope` | The scope of the tools `memory` and `recall`. `agent`: notes per profile under `<home>/memory/agents/<agent>`. `principal`: notes per person and profile under `<home>/memory/principals/<agent>/<hash>`. `shared`: one set under `<home>/memory/shared`, which only `access.admins` write through the API | `""`: `agent`, or `principal` under ax |
 | `limits.maxInputBytes` | A larger input does not run | `262144` |
 | `limits.maxOutputBytes` | A larger result keeps its head and tail | `102400` |
 | `limits.timeout` | One tool call | `10m` |
@@ -343,6 +345,8 @@ A list of event sources. No variable sets it. See [section 13.2](../design/workb
 - `featherweight-kernel/fw/lifecycle.go`
 - `featherweight-kernel/memory/store.go`
 - `featherweight-kernel/ax/config.go`
+- `featherweight-kernel/cli/setup.go`
+- `featherweight-kernel/surface/native/memory.go`
 - `featherweight-kernel/env/config.go`
 - `featherweight-kernel/harness/harness.go`
 - `featherweight-kernel/authn/oidc/claims.go`

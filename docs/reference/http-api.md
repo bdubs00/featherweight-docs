@@ -23,9 +23,11 @@ A few routes need no credential. They are the agent card, `/healthz`, `/readyz`,
 
 With `wait: true`, the call blocks until the run finishes or needs input. With the header `Accept: text/event-stream`, the same call streams the events as they happen and then closes.
 
-Admission bounds the work of one process. `maxRuns` bounds the root runs that work at once, and `maxQueuedRuns` bounds the root runs that wait behind them. If both are full, `POST /v1/runs` answers 429 with `Retry-After: 5`. A follow-up, a decision, or a branch that needs a new driver gets the same answer, and a refused follow-up changes nothing of the run. Retry with the same `Idempotency-Key`. A start that the process already accepted returns its run without a new admission. See [The run lifecycle](../concepts/run-lifecycle.md#admission).
+Admission bounds the work of one process. `maxRuns` bounds the root runs that work at once, and `maxQueuedRuns` bounds the root runs that wait behind them. If both are full, `POST /v1/runs` and a fork answer 429 with `Retry-After: 5`, and a refused start writes nothing. Retry with the same `Idempotency-Key`.
 
-After a storage failure, a route that writes answers 503, and the process accepts no work until it restarts. See [The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure).
+A follow-up and an approval decision on an accepted run never get a 429. A start that the process already accepted returns its run without a new admission. See [The run lifecycle](../concepts/run-lifecycle.md#admission).
+
+After a storage failure, a route that writes answers 503, and the process accepts no work until it restarts. A start whose `fw.run.queued` reached the ledger before the failure still returns its run. See [The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure).
 
 ```sh
 curl -s -X POST http://localhost:8080/v1/runs \
@@ -84,19 +86,22 @@ The memory routes search the memory of an agent and read and write its notes wit
 
 | Method and path | Request | Response |
 |---|---|---|
-| `GET /v1/memory` | Query: `agent`, the profile, `default` when absent. `q`, the words, required. `kinds`, a comma list of `note`, `run`, and `skill`, all three when absent. `limit`, 10 by default and 50 at most | `{"scope", "hits"}`. Each hit holds `record`, `score`, `snippet`, and `why` |
+| `GET /v1/memory` | Query: `agent`, the profile, `default` when absent. `q`, the words, required. `kinds`, a comma list of `note`, `run`, and `skill`, all three when absent. `limit`, 10 by default and 50 at most | `{"scope", "hits"}`, and `notes` when a bound stopped a search early. Each hit holds `record`, `score`, `snippet`, and `why` |
 | `GET /v1/memory/notes` | Query: `agent` | `{"scope", "notes"}`, newest first, without their text |
-| `GET /v1/memory/notes/{path}` | Query: `agent`. The header `Accept: text/markdown` or `text/plain` asks for the text alone | The note with its `hash`, which the header `ETag` repeats |
-| `PUT /v1/memory/notes/{path}` | Query: `agent`. The body is the text of the note. `If-Match` with the hash of the current note, quoted or weak, makes the write a compare-and-swap. `If-Match: *` writes only a note that exists, and `If-None-Match: *` writes only a new note | The note with its new hash and `ETag`. 412 when the note differs from the condition |
-| `DELETE /v1/memory/notes/{path}` | Query: `agent` | 204. A directory answers 400 |
+| `GET /v1/memory/notes/{path}` | Query: `agent`. The header `Accept: text/markdown` or `text/plain` asks for the text alone | The note with its `hash`, the SHA-256 of the whole file, which the header `ETag` repeats. A directory answers 400 |
+| `PUT /v1/memory/notes/{path}` | Query: `agent`. The body is the text of the note. `If-Match` with the hash of the current note, quoted or weak, makes the write a compare-and-swap. `If-Match: *` writes only a note that exists, and `If-None-Match: *` writes only a new note | The note with its new hash and `ETag`. 412 when the note differs from the condition. A directory answers 400 |
+| `DELETE /v1/memory/notes/{path}` | Query: `agent` | 204. The note also leaves the search index at once. A directory answers 400 |
 
 The kernel builds the scope from the agent of the query and the principal of the request, never from a field. A caller therefore reaches only the notes that a run of that caller reaches. The roles decide the rest:
 
 - Reading needs `agent.run` on the agent.
-- Writing or deleting a note of the scope `agent` or `shared`, which every person of the agent reads, needs `agent.edit`.
 - Writing or deleting a note of the scope `principal` needs `agent.run`.
+- Writing or deleting a note of the scope `agent`, which every person of the agent reads, needs `agent.edit`.
+- Writing or deleting a note of the scope `shared`, which every profile reads, needs the admin role of the process (`access.admins`). The 403 says so.
 
-The kind `file` belongs to the tool `recall` of a run, so `GET /v1/memory` answers 400 for it. An unknown agent answers 404, and a missing note answers 404 too. A body over 128 KB, and a write past the limit of 2,000 notes in one scope, answer 413. A path with a part that starts with `.` answers 400. Each write and each delete goes to the log of the process with the agent, the scope, and the ref.
+An agent that does not exist and an agent that the caller cannot view (`agent.view`) both answer 404 with the same text, as `GET /v1/agents/{name}` does. The routes therefore do not tell which agents exist. A caller who can view the agent and lacks the action gets 403. A missing note answers 404. The kind `file` belongs to the tool `recall` of a run, so `GET /v1/memory` answers 400 for it.
+
+A body over 128 KB, and a write past the limit of 2,000 notes in one scope, answer 413. A path with more than 8 parts, a control character, or a part that starts with `.` answers 400. Each write and each delete goes to the log of the process. The line holds the subject of the caller, the operation, the agent, the scope, the ref, the size, and the SHA-256. It never holds the text.
 
 ```sh
 curl -s -X PUT "http://localhost:8080/v1/memory/notes/build.md?agent=default" \
@@ -110,7 +115,7 @@ A host of a harness also serves the route `/v1/harness/memory/<secret>`, the MCP
 
 | Method and path | Response |
 |---|---|
-| `GET /v1/status` | The usage of the runs that the caller can view, the oldest approval that waits, and the counts of runs by state |
+| `GET /v1/status` | The usage of the runs that the caller can view, the oldest approval that waits, the counts of runs by state, `idle`, and `idleSince`. After a storage failure, also `blocked: true` and `blockedReason`, and `idle: true` since the failure |
 | `GET /v1/tools` | Every tool specification of the runtime, each with the field `text`, a plain phrase that says what the tool does |
 | `GET /v1/skills` | The skills of the configured skill directories |
 | `GET /v1/skills/{name}` | The `SKILL.md` text as `text/markdown`, or, with `Accept: application/json`, the body with the list of the other files |
@@ -135,7 +140,17 @@ The A2A surface serves the agent card and the two bindings of A2A protocol 1.0. 
 | `/a2a/tasks/{id}/pushNotificationConfigs`, `/a2a/tasks/{id}/pushNotificationConfigs/{configId}` | the agent | Create, list, get, and delete push configurations. They live in memory |
 | `GET /a2a/extendedAgentCard` | the agent | The extended card |
 
-The REST paths come from the SDK `github.com/a2aproject/a2a-go/v2`, mounted under `/a2a`. If a control plane does not answer, a binding answers 503 with `Retry-After`.
+The REST paths come from the SDK `github.com/a2aproject/a2a-go/v2`, mounted under `/a2a`.
+
+Three conditions end by themselves, so the A2A server answers them as temporary errors (`surface/a2a/unavailable.go`). The JSON-RPC binding returns the server error -32000, and its data carries `reason` and `retryAfterSeconds`. The metadata of its error info repeats them as `fwReason` and `retryAfter`. The REST binding answers with the status of the table and `Retry-After`.
+
+| Condition | Reason | REST status | Retry hint |
+|---|---|---|---|
+| A control plane does not answer | `AUTHZ_UNAVAILABLE` | 503 `UNAVAILABLE` | 5 seconds |
+| The backlog of runs is full | `SATURATED` | 429 `RESOURCE_EXHAUSTED` | 5 seconds |
+| A storage failure blocked the process | `STORAGE_UNAVAILABLE` | 503 `UNAVAILABLE` | 30 seconds |
+
+Retry with the same message id, which gives one run. The message of a storage error holds no cause, because the cause can name a path of the server.
 
 ```sh
 curl -s http://localhost:8080/.well-known/agent-card.json
@@ -217,6 +232,8 @@ The front builds three routes itself from the run and the events of the owner, b
 - `featherweight-kernel/surface/a2a/card.go`
 - `featherweight-kernel/surface/a2a/push.go`
 - `featherweight-kernel/surface/a2a/unavailable.go`
+- `featherweight-kernel/surface/a2a/handler.go`
+- `featherweight-kernel/surface/view/status.go`
 - `featherweight-kernel/surface/metrics/metrics.go`
 - `featherweight-kernel/surface/axmeta/axmeta.go`
 - `featherweight-kernel/fw/agent.go`

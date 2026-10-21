@@ -57,18 +57,26 @@ When `fw.run.queued` of a job is in the ledger, the bus intake acknowledges the 
 
 ## Admission
 
-Admission bounds the root runs that one process takes on (`fw/lifecycle.go`). The kernel reserves a place for a run before it appends the event that starts its work. `maxRuns`, or `FW_MAX_RUNS`, bounds the root runs that work at the same time: 16 by default, or 1 under ax. `maxQueuedRuns`, or `FW_MAX_QUEUED_RUNS`, bounds the root runs that the process admits beyond that and that wait for a working slot. Zero takes the default of 64.
+Admission bounds the root runs that one process takes on (`fw/lifecycle.go`). `maxRuns`, or `FW_MAX_RUNS`, bounds the root runs that work at the same time: 16 by default, or 1 under ax. `maxQueuedRuns`, or `FW_MAX_QUEUED_RUNS`, bounds the root runs that the process admits beyond that and that wait for a working slot. Zero takes the default of 64.
 
-A process therefore admits at most `maxRuns + maxQueuedRuns` root drivers for new work. A start, a branch, a follow-up, and a decision that starts a driver each reserve a place first. When no place is free, the kernel returns `fw.ErrSaturated` with a `fw.SaturationError` that names both limits. The native API answers 429 with `Retry-After: 5`. Retry with the same idempotency key. The A2A surface maps the same error to an internal error, which a client does not retry (`mapErr` in `surface/a2a/handler.go`). The bus intake returns the job to the queue for another delivery. A decision and a follow-up on an accepted run take a place from the same pool as new starts. An approval can therefore get a 429 while the process is full. A start that the process already accepted returns its run without another admission.
+A start and a branch are new work. Each reserves its place before it stores an attachment or appends an event, so a process admits at most `maxRuns + maxQueuedRuns` root drivers for new work. When no place is free, the kernel returns `fw.ErrSaturated` with a `fw.SaturationError` that names both limits. A refused start leaves no file on disk and no event in the ledger. The native API answers 429 with `Retry-After: 5`. Retry with the same idempotency key.
+
+The A2A server answers a full process with a temporary error (`surface/a2a/unavailable.go`). The JSON-RPC binding returns the server error -32000 with the reason `SATURATED` and `retryAfterSeconds` in its data. The REST binding answers 429 with `Retry-After`. Retry with the same message id. A start that the process already accepted returns its run without another admission.
+
+A follow-up and an approval decision continue a run that this process accepted. Each takes a place for its driver, and the driver waits for a working slot, but the bound never refuses it. An approval or a follow-up therefore never gets a 429 while the process is full. Follow-ups and decisions can raise the number of admitted drivers above the bound.
+
+The bus intake reserves a place in the backlog when it takes a job (`fw/intake.go`). The start of the run of the job takes that place over, and a start from another surface cannot take it. A job that the intake took is therefore never refused for saturation. A bus without a gate makes its handler wait for a free place first. A shutdown, a storage failure, or the end of the context of the kernel during a start sends the job back to the bus.
+
+A start checks the shutdown and the storage before it appends `fw.run.queued`. Once that event is in the ledger, the run is accepted, and the start returns it. This holds also when a shutdown or a storage failure begins during the rest of the start, such as the records of its attachments. The run then waits in the ledger, and the next start of the process resumes it. The bus intake acknowledges such a job, so no other process starts the run a second time.
 
 These rules decide who holds a place:
 
-- A follow-up reserves its place before it stores its attachments or records a budget change. A refused follow-up therefore changes nothing of the run. If a driver that is already active takes the message, the place goes back.
-- A branch that waits for a decision holds no place until the decision starts its driver.
+- A follow-up reserves its place before it stores its attachments or records a budget change. If a driver that is already active takes the message, the place goes back.
+- A branch reserves its place before its first append and keeps it through the copy of the kept events. A full backlog therefore appends nothing of the branch. A branch that waits for a decision gives the place back until the decision starts its driver.
 - A child run takes no root place. The `spawn` limits and the limits of its tree bound it. A parent that waits for its children therefore never takes the places that they need.
 - If a change of the configuration lowered the limits, the kernel still resumes at boot the work that the ledger already accepted.
 
-The limits bound admission, not the history: finished and idle runs stay readable. See [section 5.6](../design/kernel-architecture.md#56-process-duties).
+The limits bound admission, not the history: finished and idle runs stay readable. See [section 5.6](../design/kernel-architecture.md#56-process-duties) and [section 9.3](../design/kernel-architecture.md#93-intake).
 
 ## The turn loop
 
@@ -108,9 +116,13 @@ A child run that waits sends its question to its parent, so the parent is the on
 
 ## Idle, suspend, and wake
 
-`GET /v1/status` on the native API tells a control plane whether the Task has work (`view.StatusOf` in `surface/view/status.go`). When no run is `queued` or `running`, `idle` is true. Every run then waits for input, is suspended, or finished, and a process without runs is idle. `idleSince` is the newest update of a run, or the start of the process. The process is also not idle in three cases. A child in another process is still starting (`Agent.Starting`). The process follows a child that works (`Agent.Following`). A package holds the process (`Agent.Hold`), for example during the install of an environment.
+`GET /v1/status` on the native API tells a control plane whether the Task has work (`view.StatusOf` in `surface/view/status.go`). When no run is `queued` or `running`, `idle` is true. Every run then waits for input, is suspended, or finished, and a process without runs is idle. `idleSince` is the newest update of a run, or the start of the process. A process that a storage failure blocked is idle since the failure (see below).
+
+The process is not idle in three cases. A child in another process is still starting (`Agent.Starting`). The process follows a child that works (`Agent.Following`). A package holds the process (`Agent.Hold`), for example during the install of an environment.
 
 The front of the workbench reads the lifecycle events of every Task on `bus.egress`. Its suspend controller (`fleet/suspend.go`) looks at every running Task at each interval. A Task is a candidate under two conditions. The view holds no `queued` or `running` run of it. Its newest update is older than `workbench.fleet.suspendAfter`, ten minutes by default. For each candidate the front reads `GET /v1/status` once through the atenet router. If the body says `idle` and the idle time is at least the grace period, the front suspends the Task through the ax API.
+
+A Task can send no event for the grace period while the view shows its runs as working. The controller reads the status of such a Task at most once per interval. If that body says `blocked`, the front suspends the Task at once.
 
 Agent Substrate then pauses the sandbox, saves `/workspace`, and kills `fw` with `SIGKILL`. No `SIGTERM` comes first, so the ledger gets no `fw.run.suspended` event. A suspended Task costs nothing.
 
@@ -120,12 +132,15 @@ The state `suspended` comes from another path. If the process gets `SIGTERM`, fo
 
 ## Resume from the ledger at boot
 
-At start, `rebuild` in `fw/resume.go` reads the run index, projects every run, and collects the runs whose state is not terminal, oldest first. The state decides, not the last event, so a finished run with a late annotation stays finished. `resume` appends `fw.run.resumed` with the sequence number that it continues from and launches a driver, unless the run is `input-required`. Such a run waits for its decision.
+At boot, `fw serve` and the ax boot take the writer lock of the file ledger. If another `fw` process holds it, the server tries again for up to 30 seconds and then exits with an error. `fw run` and `fw replay` beside a server fail at once. See [The ledger](../concepts/ledger.md#one-writer-for-each-root).
+
+Then `rebuild` in `fw/resume.go` reads the run index, projects every run, and collects the runs whose state is not terminal, oldest first. The state decides, not the last event, so a finished run with a late annotation stays finished. `resume` appends `fw.run.resumed` with the sequence number that it continues from and launches a driver, unless the run is `input-required`. Such a run waits for its decision.
 
 The driver then continues from the last complete point in the log:
 
 - A `fw.model.requested` without a response sends the request again. This holds for the final report call too.
-- If the tool is idempotent, a `fw.tool.requested` without a result runs the tool again. Otherwise the kernel asks for an approval with the reason `rerun after resume`. Two tools are exceptions: `ask_user`, which finishes from the recorded question and answer, and a call that waited for a connection. The tool `memory` is not idempotent, because `insert` and some `str_replace` calls change a note again. An interrupted memory call therefore asks for an approval, and an approval can repeat an edit that already took effect.
+- A `fw.tool.requested` without a result runs the tool again when the call is safe to repeat. A call is safe when its tool is idempotent, or when the tool implements `fw.CallIdempotency` and says so for that input. Otherwise the kernel asks for an approval with the reason `rerun after resume`. Two cases are exceptions: `ask_user`, which finishes from the recorded question and answer, and a call that waited for a connection.
+- The tool `memory` decides per command. An interrupted `view`, `create`, `delete`, or `rename` runs again at once, so an unattended job does not wait for a person. An interrupted `insert` or `str_replace` asks for an approval, and an approval can repeat an edit that already took effect.
 - A pending `fw.approval.requested` waits for its decision.
 
 The working time of the run ends at the last event before the gap (`fw.WorkingTime` in `fw/clock.go`). The time that a Task sleeps therefore does not count against the deadline. The system prompt, the brief, and the raw provider blocks come from the ledger unchanged. The woken container therefore keeps the prompt cache prefix of the provider. The design document describes this in [section 4.5](../design/kernel-architecture.md#45-resume) and [section 11.5](../design/kernel-architecture.md#115-suspend-and-resume).
@@ -144,7 +159,13 @@ The text becomes the output of the run, which finishes as `failed` with an error
 
 ## A storage failure
 
-The first failure of a ledger append, or of a read of a run for its driver, fail-stops the process. The process then stops its work and its writes until a restart. The kernel cancels the local work and blocks every write. `/readyz` answers 503, `Agent.RuntimeError` keeps the cause, and each open run shows the field `blocked` beside its last recorded state. A caller that waits for a run gets `fw.ErrStorageUnavailable`. The kernel appends nothing more, not even a terminal event, so the runs keep the state that the ledger holds. Repair the storage and restart the process, and the restart resumes the runs from the ledger. See [The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure).
+Only a storage fault fail-stops the process (`failStorage` in `fw/lifecycle.go`). A storage fault is an append, a flush, or a read of the ledger that fails, or an append after the ledger closed. Fail-stop means that the process stops its work and its writes until a restart. A driver that stops on another error, such as a broken pipe of a hosted harness, fails its own run alone with `fw.run.finished`. The process goes on, and a follow-up can continue that run.
+
+After a storage fault, the kernel cancels the local work and blocks every write. It writes one Error line with the cause and the time to the log. `/readyz` answers 503, `Agent.RuntimeError` keeps the cause, and the gauge `fw_storage_blocked` is 1. Each open run shows the field `blocked` beside its last recorded state. A caller that waits for a run gets `fw.ErrStorageUnavailable`. The kernel appends nothing more, not even a terminal event, so the runs keep the state that the ledger holds.
+
+`GET /v1/status` then reports `blocked: true` with `blockedReason`, and `idle: true` with `idleSince` at the time of the failure. This holds whatever the state of the runs, because the process does no work until it restarts. Under ax, the suspend controller of the front can therefore suspend the Task. The next request restores a fresh process that rebuilds from the ledger.
+
+Elsewhere, repair the storage and restart the process. The A2A server answers the failure with the reason `STORAGE_UNAVAILABLE` and a retry hint of 30 seconds. See [The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure).
 
 ## Cancel
 
@@ -162,6 +183,7 @@ The first failure of a ledger append, or of a read of a run for its driver, fail
 - `featherweight-kernel/tools/builtin/memory.go`
 - `featherweight-kernel/fw/turn.go`
 - `featherweight-kernel/fw/resume.go`
+- `featherweight-kernel/fw/callidem.go`
 - `featherweight-kernel/fw/intake.go`
 - `featherweight-kernel/fw/busio.go`
 - `featherweight-kernel/fw/budget.go`
@@ -176,8 +198,11 @@ The first failure of a ledger append, or of a read of a run for its driver, fail
 - `featherweight-kernel/surface/view/status.go`
 - `featherweight-kernel/surface/a2a/a2a.go`
 - `featherweight-kernel/surface/a2a/handler.go`
+- `featherweight-kernel/surface/a2a/unavailable.go`
+- `featherweight-kernel/cli/serve.go`
+- `featherweight-kernel/telemetry/metrics.go`
 - `featherweight-kernel/tools/builtin/child.go`
-- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 3, 4.5, 5, and 11)
+- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 3, 4.5, 5, 9.3, and 11)
 - `featherweight-kernel/docs/KERNEL_MAP.md` (section 2)
 - `featherweight-workbench/docs/ARCHITECTURE.md` (section 4.12)
 - `featherweight-workbench/docs/PRODUCT_DIRECTION.md` (section 3.1)

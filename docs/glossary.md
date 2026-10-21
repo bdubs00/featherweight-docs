@@ -8,13 +8,13 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **actor**: a program in a gVisor sandbox that Agent Substrate starts, suspends, and resumes. An AX Task runs as one actor. See [The four layers](concepts/layers.md).
 
-**admission**: the bound on the root runs that one process takes on: `maxRuns` that work and `maxQueuedRuns` that wait, 64 by default. A full process answers 429 with `Retry-After`. See [The run lifecycle](concepts/run-lifecycle.md#admission).
+**admission**: the bound on the root runs that one process takes on: `maxRuns` that work and `maxQueuedRuns` that wait, 64 by default. A full process answers a new start or a branch with 429 and `Retry-After`, and never refuses a follow-up or a decision. See [The run lifecycle](concepts/run-lifecycle.md#admission).
 
 **agentgateway**: the gateway that the lab puts in front of the front, so that one URL serves `/mcp`, `/ui`, and `/v1`. In the lab it cuts a call after ten seconds. See [A fleet](deployment/fleet.md) and [The homelab cluster](operations/homelab.md).
 
 **approval**: a hold on a tool call that the policy marks `ask`. The run waits in the state `input-required` until a person allows or denies the call. See [Safeguards](concepts/safeguards.md).
 
-**arming**: the step in which the host of a harness marks a memory call that the policy allowed. The memory server `fw-memory` then makes that call alone, with the same tool and input, within two minutes. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#the-package-harness).
+**arming**: the step in which the host of a harness marks a memory call that the policy allowed, with its canonical input. The memory server `fw-memory` then makes that call alone, with the same tool and canonical input, while the run lasts and within two minutes. For a call that a person decided, the host arms the approved call. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#arming).
 
 **atenet router**: the Substrate proxy that sends a request to the actor named in the header `ate-target-actor`, and wakes a suspended actor first. It is the only door into an actor. See [The four layers](concepts/layers.md) and [section 11.4 of the kernel architecture](design/kernel-architecture.md#114-addressing-through-the-atenet-router).
 
@@ -26,6 +26,8 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **batch**: the name that every run of one job carries in the metadata `fw.batch`, and the MCP tool that reports how a job goes. See [The fleet](concepts/fleet.md).
 
+**blocked**: the state of a process after a storage fault, also called fail-stop. `GET /v1/status` reports `blocked: true` with `blockedReason` and the process idle, and the gauge `fw_storage_blocked` is 1. The front suspends such a Task. See [The ledger](concepts/ledger.md#fail-stop-on-a-storage-failure).
+
 **branch**: a new run whose ledger starts with a copy of the events of a source run up to a sequence number. The tool `fork` makes one. See [The ledger](concepts/ledger.md) and [section 4.7 of the kernel architecture](design/kernel-architecture.md#47-branches).
 
 **budget**: the limits of a run: turns, tokens, cost, working time, tool calls, tool calls per turn, and repeats of one call. See [Safeguards](concepts/safeguards.md).
@@ -33,6 +35,8 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 **bus**: the message queue of the kernel, `mem`, NATS, or Redis. It carries jobs in on the intake queue and events out on the egress subject. See [The fleet](concepts/fleet.md) and [section 9 of the kernel architecture](design/kernel-architecture.md#9-message-queues).
 
 ## C
+
+**canonical input**: the form of the input of a memory call of a hosted harness. It holds only the fields of the schema of the tool, each once and of its type, and the full path of a note. The policy decides on it, and the server matches it by bytes. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#the-memory-server).
 
 **CloudEvents**: the envelope of every ledger event. The ledger is one CloudEvents JSON object per line. See [The ledger](concepts/ledger.md).
 
@@ -58,7 +62,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 ## F
 
-**fail-stop**: the state of a process after its first storage failure. Every write is blocked, `/readyz` answers 503, and only a restart resumes the work from the ledger. See [The ledger](concepts/ledger.md#fail-stop-on-a-storage-failure).
+**fail-stop**: the state of a process after its first storage fault: a failed append, flush, or read of the ledger. Every write is blocked, `/readyz` answers 503, `GET /v1/status` reports the process blocked and idle, and only a restart resumes the work from the ledger. See [The ledger](concepts/ledger.md#fail-stop-on-a-storage-failure).
 
 **fleet**: a set of workers and one front. The front reads the Task list from the AX API and the runs from the egress stream. See [The fleet](concepts/fleet.md).
 
@@ -66,7 +70,9 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **front**: `fw-workbench` outside the sandboxes, as a Deployment. It serves people over `/ui` and `/mcp`, keeps the grants, brokers tokens, sends jobs, and suspends idle Tasks. See [The fleet](concepts/fleet.md).
 
-**fw-memory**: the MCP server that gives a hosted harness the memory, on the loopback route `/v1/harness/memory/<secret>` of the native API. Its tools are `recall`, `list`, `remember`, and `forget`. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#the-package-harness).
+**fw.brief**: the harness event that the host records before the first prompt with text of a session goes out. Its field `context` is true when that prompt holds the memory index, so the index never goes out twice. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#the-package-harness).
+
+**fw-memory**: the MCP server that gives a hosted harness the memory, on the loopback route `/v1/harness/memory/<secret>` of the native API. Its tools are `recall`, `list`, `remember`, and `forget`, and the policy names them `fw-memory.<tool>`. The name belongs to `fw`. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#the-memory-server).
 
 ## G
 
@@ -124,7 +130,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **principal**: the identity of a caller: a subject, a name, a kind (`user`, `workload`, `token`, `local`, or `anonymous`), groups, and scopes. See [Identity](concepts/identity.md).
 
-**principal scope**: the memory scope `principal`: one directory of notes for each person in each profile, under a hash of the subject of the person. A profile that more than one person runs takes it. See [Context, memory, and time](concepts/context-memory-time.md#the-store-and-its-scopes).
+**principal scope**: the memory scope `principal`: one directory of notes for each person in each profile, under a hash of the subject of the person. It is the default under ax, where the runs of many people follow one another in one Task. See [Context, memory, and time](concepts/context-memory-time.md#the-store-and-its-scopes).
 
 **profile**: a named agent configuration: a system prompt, instructions, tools, skills, a model, an effort, a time zone, a policy, a budget, and an access block. See [Profiles, tools, and skills](concepts/profiles-and-tools.md).
 
@@ -134,7 +140,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 ## R
 
-**recall**: the built-in tool that searches notes, earlier runs, workspace files, and skills, and reads one record by its ref. It is read-only. See [Context, memory, and time](concepts/context-memory-time.md#the-recall-tool).
+**recall**: the built-in tool that searches the memory of a run. It searches the notes, the earlier runs of the same agent and principal, the workspace files, and the allowed skills. It reads one record by its ref, and it is read-only. See [Context, memory, and time](concepts/context-memory-time.md#the-recall-tool).
 
 **replay**: `fw replay <run> --model <selector>`, which runs a recorded run again against another model with the recorded tool results. See [The ledger](concepts/ledger.md).
 
@@ -144,7 +150,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 ## S
 
-**scope (memory)**: the notes that a run reads and writes: `agent`, `principal`, or `shared`, from `tools.memory.scope`. The kernel builds it from the run, never from the input of a call. See [Context, memory, and time](concepts/context-memory-time.md#the-store-and-its-scopes).
+**scope (memory)**: the notes that a run reads and writes: `agent`, `principal`, or `shared`, from `tools.memory.scope`. An empty key is `agent`, or `principal` under ax. The kernel builds it from the run, never from the input of a call. See [Context, memory, and time](concepts/context-memory-time.md#the-store-and-its-scopes).
 
 **skill**: a directory with a `SKILL.md` file under `skills/`. The system prompt lists it, and the tool `skill` reads it. See [Profiles, tools, and skills](concepts/profiles-and-tools.md).
 

@@ -52,6 +52,9 @@ The route carries no authentication, because a scraper has no token. Keep it ins
 | `fw_ledger_events_total` | counter | `type` |
 | `fw_ledger_append_duration_seconds` | histogram | `driver` |
 | `fw_build_info` | gauge | `version`, `commit`, `go` |
+| `fw_storage_blocked` | gauge | none |
+
+`fw_storage_blocked` is 1 after a storage failure stopped the process, and 0 otherwise. A storage failure is a failed append, flush, or read of the ledger. The gauge stays 1 until the process restarts, because the process then writes nothing and runs nothing. The metrics read it from `Agent.RuntimeError` at each scrape and at each OTLP push, so the gauge needs no event. See [The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure).
 
 The table of section 10.1 of the kernel architecture lists `fw_runs_total` with `agent` and `outcome` alone. The code adds `batch`, the job of the run from the metadata `fw.batch`, so the code wins. `fw_model_cost_usd_total` counts priced tokens only. Set the prices per million tokens under `prices` in `fw.yaml`, with a price of zero for a local model, and the tokens of a model without a price go to `fw_model_unpriced_tokens_total`. The model latency histogram has buckets up to 900 seconds.
 
@@ -65,7 +68,7 @@ A run that completed is not a task that someone verified. Nine series of `teleme
 | `fw_task_verifications_total` | counter | `result` (`accepted`, `satisfied`, `rejected`, `unknown`) | Each final receipt of a trusted integration for a completed episode |
 | `fw_operator_interventions_total` | counter | `kind` (`decision`, `followup`, `budget_change`) | Each concrete action of an operator that the ledger records |
 | `fw_operator_interventions_per_run` | histogram | `coverage` (`complete`, `partial`) | The actions in each completion episode, zero included. `partial` means that the observer did not see the whole history of the run |
-| `fw_recovery_duration_seconds` | histogram | `result` (`progress`, `completed`, `failed`, `canceled`, `interrupted`) | The time from `fw.run.resumed` to the first model response, tool response, or tool progress, or to the end or the next stop of the run |
+| `fw_recovery_duration_seconds` | histogram | `result` (`progress`, `input_required`, `completed`, `failed`, `canceled`, `interrupted`) | The time from `fw.run.resumed` of a run that was queued or running to its first progress: a model response, a tool response, or tool progress. The clock also stops at an approval request, the end, or the next stop of the run |
 | `fw_confirmed_duplicate_effects_total` | counter | none | The additional external effects that a trusted integration confirmed |
 | `fw_ambiguous_tool_retries_total` | counter | none | Each new request for a tool call id that is still open, such as a rerun after a resume |
 | `fw_successful_task_cost_usd` | histogram | `basis` (`accepted`, `satisfied`) | The own model cost of an episode with a final `accepted` or `satisfied` receipt and complete, priced usage |
@@ -73,7 +76,7 @@ A run that completed is not a task that someone verified. Nine series of `teleme
 
 An intervention of the kind `decision` is an approval decision whose decider is neither the kernel nor the parent run. A decision on a run that the kernel started itself, such as a grader run, does not count. A `followup` is a user message from the origin `http`, `cli`, or `mcp`. A `budget_change` is a change of the budget by a named person from one of those origins. These are actions that the runtime recorded, not proof that a person sat at the keyboard.
 
-A recovery that a crash cut ends at the last event of the old attempt, so the time leaves out the downtime of the process. The histogram therefore does not measure the whole outage.
+A recovery that a crash cut ends at the last event of the old attempt, so the time leaves out the downtime of the process. The histogram therefore does not measure the whole outage. A run that waited for input at the interruption, with a pending approval, waits for a person before and after the restart. It gets no sample, and its next suspend or resume adds none either. The result `input_required` means that the run reached a question for a person. The time that a person takes to decide therefore never counts.
 
 ### Receipts from an integration
 
@@ -110,10 +113,15 @@ The package `fleet` of the workbench adds the series of the fleet to the registr
 | `fw_fleet_runs_budget_exceeded_total` | counter | `agent`, `member`, `limit` |
 | `fw_fleet_approvals_pending` | gauge | `agent` |
 | `fw_fleet_approvals_oldest_timestamp_seconds` | gauge | `agent` |
+| `fw_fleet_members_blocked` | gauge | none |
 
-`queue` is `<workbench.fleet.intake>.<agent>`, and `member` is `<atespace>/<task>` for a Task. Each run counter keeps at most 1024 pairs of agent and member, and the pairs past that bound count under `other`. The run counters count the ends that the front saw since it started, and every replica sees the whole stream, so take the maximum over the replicas, not the sum. `fw_fleet_approvals_pending` counts the runs of other members only. [Section 4.14 of the workbench architecture](../design/workbench-architecture.md#414-metrics-and-alerts) has four example alert rules: `FwFleetRunFailuresRising`, `FwFleetQueueDeep`, `FwFleetApprovalWaiting`, and `FwFleetDeadLetter`. Load them beside the rules of the kernel.
+`queue` is `<workbench.fleet.intake>.<agent>`, and `member` is `<atespace>/<task>` for a Task. Each run counter keeps at most 1024 pairs of agent and member, and the pairs past that bound count under `other`. The run counters count the ends that the front saw since it started. Every replica sees the whole stream, so take the maximum over the replicas, not the sum. `fw_fleet_approvals_pending` counts the runs of other members only.
 
-Section 10.1 of the kernel architecture names the fleet gauges `fw_fleet_member_up`, `fw_fleet_member_last_seen_timestamp_seconds`, and `fw_fleet_runs`, and says that the rules and the dashboard of `examples/observability` name them. The code of `fleet/metrics.go` has the eight series above, and the example files name no `fw_fleet_*` series. The code wins.
+`fw_fleet_members_blocked` counts the members whose status said `blocked` when the suspend controller read it. A member counts until its next event. Only a replica that read the status marks the member, so take the maximum over the replicas. The front suspends such a Task, and the next request restarts it (see [The fleet](../concepts/fleet.md#idle-and-the-suspend-controller)).
+
+[Section 4.14 of the workbench architecture](../design/workbench-architecture.md#414-metrics-and-alerts) has five example alert rules: `FwFleetRunFailuresRising`, `FwFleetQueueDeep`, `FwFleetApprovalWaiting`, `FwFleetMemberBlocked`, and `FwFleetDeadLetter`. Load them beside the rules of the kernel. `FwFleetMemberBlocked` fires when `max(fw_fleet_members_blocked) > 0`, with the severity `warning`.
+
+Section 10.1 of the kernel architecture names the fleet gauges `fw_fleet_member_up`, `fw_fleet_member_last_seen_timestamp_seconds`, and `fw_fleet_runs`. It says that the rules and the dashboard of `examples/observability` name them. The code of `fleet/metrics.go` has the nine series above, and the example files name no `fw_fleet_*` series. The code wins.
 
 ## Export over OTLP
 
@@ -133,6 +141,17 @@ The transport is OTLP over HTTP. The resource carries `service.name`, `service.v
 - The metrics are the series of the registry, pushed as they are through the Prometheus bridge of the SDK, with the same names and labels. The push starts as soon as the metrics surface mounts.
 - The logs are the ledger. Every event goes out as one log record: the body is the data of the event, the event name is its type, and the attributes are `fw.run`, `fw.event`, `fw.seq`, `fw.agent`, `fw.node`, and `fw.source`. The record carries the trace id and the span id of the run, so a log store and a trace store meet on the same ids. A failed run and a budget stop are errors, a loop and a suspend are warnings, and the rest is information.
 - The traces are the spans of the runs: `fw.run` for a run, a child span per turn, and `chat <model>` and `execute_tool <tool>` under it, with the GenAI attributes of OpenTelemetry.
+
+A span names its run in `gen_ai.conversation.id`, and the run span also in `fw.run.id`. No span attribute holds a person, the id of another run, or free text of an integration. These attributes name who acted as a kind only (`telemetry/trace.go` and `telemetry/quality_trace.go`):
+
+| Attribute | Where | Value |
+|---|---|---|
+| `fw.approval.decider_kind` | event `fw.approval.decided` | `person`, `parent`, `token`, `workload`, `local`, `kernel`, or `none` |
+| `fw.budget.by_kind` | event `fw.budget.changed` | the same kinds |
+| `fw.outcome.graded` | event `fw.outcome.evaluated` | true when a grader run started. The id of the grader run stays in the ledger |
+| `fw.quality.receipt_sha256` | event `fw.run.annotated` and span `fw.quality.observation` | the SHA-256 of the receipt id in hex, so a trace store matches one receipt without its id |
+
+The kind comes from the shape of the subject. A SPIFFE URI is a `workload`, a run id is a `parent`, and the static token is a `token`. `local` is the local user or `fw run`, and any other subject is a `person`. The ledger keeps the subject itself. These names replace `fw.approval.decider`, `fw.budget.by`, `fw.outcome.grader`, and `fw.quality.receipt`. The span `fw.quality.observation` names its run in `gen_ai.conversation.id`, in place of `fw.run.id`.
 
 `fw doctor` prints one line, `telemetry: exports <signals> over OTLP to <endpoint>`, or `telemetry: no OTLP export`. The egress policy of a Task must allow the collector. See [the kernel architecture, section 10.5](../design/kernel-architecture.md#105-export-over-otlp).
 
@@ -154,9 +173,11 @@ The series of the front cover the fleet without a request to a Task, so an alert
 |---|---|
 | `prometheus.yml` | Two scrape jobs at 30 seconds. `fw` scrapes fixed addresses. `fw-pods` keeps the Kubernetes pods with the label `fw.dev/scrape: "true"` and the container port named `http`, and reads the annotation `fw.dev/metrics-path` for another path. |
 | `otel-collector.yaml` | An OpenTelemetry collector that receives OTLP on 4318 (HTTP) and 4317 (gRPC), serves the metrics of every pusher to Prometheus on port 9464 with `service.instance.id` as the label `instance` and an expiration of 15 minutes, and sends the logs and the traces to a log store and a trace store that you name. |
-| `alerts.yml` | Fourteen alert rules in two groups. The group `fw-task-quality` holds `FwVerifiedCompletionRateLow`, `FwOperatorInterventionsHigh`, `FwRecoverySlow`, `FwConfirmedDuplicateEffects`, `FwSuccessfulTaskCostUnknown`, and `FwSuccessfulTaskCostHigh`. The group `fw` holds `FwTargetDown`, `FwApprovalWaiting`, `FwRunFailuresRising`, `FwBudgetStops`, `FwLoops`, `FwMCPServerDown`, `FwModelErrorRate`, and `FwModelLatencyHigh`. The thresholds are starting points. |
+| `alerts.yml` | Fifteen alert rules in two groups. The group `fw-task-quality` holds `FwVerifiedCompletionRateLow`, `FwOperatorInterventionsHigh`, `FwRecoverySlow`, `FwConfirmedDuplicateEffects`, `FwSuccessfulTaskCostUnknown`, and `FwSuccessfulTaskCostHigh`. The group `fw` holds `FwStorageBlocked`, `FwTargetDown`, `FwApprovalWaiting`, `FwRunFailuresRising`, `FwBudgetStops`, `FwLoops`, `FwMCPServerDown`, `FwModelErrorRate`, and `FwModelLatencyHigh`. The thresholds are starting points. |
 | `grafana/fw.json` | One dashboard for Grafana 10 or later. It reads the variable `Data source`, and `Agent` filters the panels with an agent label. The row of task quality covers every agent and ignores `Agent`. Its seven panels show the verified completion ratio, the completions and the receipts, the interventions per episode, and the recovery p95 by result. They also show the confirmed duplicates beside the ambiguous retries, the own cost per successful task, and the cost coverage. |
 | `quality/main.go` | A receipt example that needs no model provider and no external service: `go run ./examples/observability/quality`. A faulty delivery tool commits two rows. The integration counts the rows and reports one `satisfied` completion with one confirmed duplicate effect, twice, and the metrics count it once. |
+
+`FwStorageBlocked` fires when `fw_storage_blocked` is 1 for one minute, with the severity `critical`. Its description tells the operator to repair the storage, such as a full disk, and to restart the process.
 
 The README of the directory has a section on the five task-quality measures, with the PromQL queries of each measure and the receipt API. `config_test.go` makes sure that the dashboard and the alert rules parse. With the Prometheus Operator, copy the groups into a `PrometheusRule`. `promtool check config prometheus.yml` tests both files. The pods of `fw-front` in `examples/agentgateway` carry the label `fw.dev/scrape: "true"`, and the gateway does not route `/metrics`.
 
@@ -188,6 +209,8 @@ The Prometheus of the stack scrapes the collector, so the label of a pusher is `
 - `featherweight-kernel/surface/metrics/metrics.go`
 - `featherweight-kernel/telemetry/metrics.go`
 - `featherweight-kernel/telemetry/quality.go`
+- `featherweight-kernel/telemetry/quality_trace.go`
+- `featherweight-kernel/telemetry/trace.go`
 - `featherweight-kernel/fw/quality.go`
 - `featherweight-kernel/telemetry/otlp.go`
 - `featherweight-kernel/cli/doctor.go`
@@ -202,6 +225,7 @@ The Prometheus of the stack scrapes the collector, so the label of a pusher is `
 - `featherweight-kernel/examples/observability/config_test.go`
 - `featherweight-workbench/docs/ARCHITECTURE.md` (section 4.14)
 - `featherweight-workbench/fleet/metrics.go`
+- `featherweight-workbench/fleet/suspend.go`
 - `featherweight-workbench/examples/agentgateway/README.md`
 - `featherweight-lab/e2e/fleet/check-export.sh`
 - `featherweight-lab/e2e/fleet/observe.sh`

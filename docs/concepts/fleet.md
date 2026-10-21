@@ -44,7 +44,9 @@ The front reads two sources, and it never polls a Task for its state.
 1. The ax API. At every `workbench.fleet.interval`, the front lists the Tasks of `workbench.fleet.atespaces`. Each Task is a member with the state of its phase. A running Task is `live`. A suspended or pending Task is `quiet`. Any other Task is `stopped`. A Task that leaves the list leaves the view.
 2. The egress stream. The front subscribes to `workbench.fleet.egress`, which is `bus.egress` on each worker. A worker publishes each ledger event to `<prefix>.<atespace>.<agent>.<type>`, and the front projects every run with the projection of the kernel. The state, the title, the pending approval, the turns, and the usage of a run are those of the ledger of the worker. The usage comes from the totals that `fw.run.finished` and `fw.run.suspended` carry, so the stream needs no `fw.model.responded`. Each event names its node, so the front knows which Task holds the run. A `fw.run.child` event tells the view where a child of a run lives.
 
-A read of a sleeping Task wakes it, so the front reads a Task through the router only while the Task is awake. When a Task becomes live, the front reads `GET /v1/runs` and `GET /v1/agents` of it with the static token. The runs that started before the front listened are then in the view, and the front knows which profiles the Task serves. While the view holds a run of a live Task as queued or running, the front reads its runs again once a minute. A suspend can cut the final events of a run, and this read repairs that case. The suspend controller reads a Task once, right before it suspends it. A finished run leaves the view after `workbench.fleet.expire`.
+A read of a sleeping Task wakes it, so the front reads a Task through the router only while the Task is awake. When a Task becomes live, the front reads `GET /v1/runs` and `GET /v1/agents` of it with the static token. The runs that started before the front listened are then in the view, and the front knows which profiles the Task serves. While the view holds a run of a live Task as queued or running, the front reads its runs again once a minute. A suspend can cut the final events of a run, and this read repairs that case.
+
+The suspend controller reads the status of an idle Task right before it suspends it. It reads a busy Task without events at most once per interval (below). A finished run leaves the view after `workbench.fleet.expire`.
 
 ## The name of a member
 
@@ -76,9 +78,19 @@ The delivery is at least once. The events behind a cursor reach the disk before 
 
 ## Idle and the suspend controller
 
-`GET /v1/status` of a worker gives the state of the agent at a glance. When no run is queued or running, `idle` is true: every run waits for input, is suspended, or is finished. `idleSince` is the newest update of a run. When no run worked yet, it is the start of the process. While a run works, it is absent. The body also carries `runs.active`, `runs.inputRequired`, and the oldest `pendingApproval`. While a child in another Task works, the parent is not idle. The controller therefore does not put the parent to sleep while its children spend.
+`GET /v1/status` of a worker gives the state of the agent at a glance. When no run is queued or running, `idle` is true: every run waits for input, is suspended, or is finished. `idleSince` is the newest update of a run. When no run worked yet, it is the start of the process. While a run works, it is absent. The body also carries `runs.active`, `runs.inputRequired`, and the oldest `pendingApproval`.
 
-At every interval, the controller looks at every Task whose phase is Running. A candidate is a Task with no queued or running run in the view. Its newest run update must also be older than `workbench.fleet.suspendAfter`. For each candidate, the front reads `GET /v1/status` once through the router, which wakes nobody because the Task runs. If the body says `idle` and the idle time is at least the grace period, the front calls `SuspendTask` on the ax API. Otherwise it leaves the Task alone. The body of the Task decides, so a view that missed an event suspends nobody who works. A suspended Task costs nothing. The log of the front names every Task that it suspends and wakes.
+While a child in another Task works, the parent is not idle. The controller therefore does not put the parent to sleep while its children spend.
+
+At every interval, the controller looks at every Task whose phase is Running and whose newest run update is older than `workbench.fleet.suspendAfter`. A Task with no queued or running run in the view is idle. For each idle Task, the front reads `GET /v1/status` once through the router, which wakes nobody because the Task runs. If the body says `idle` and the idle time is at least the grace period, the front calls `SuspendTask` on the ax API. The body of the Task decides, so a view that missed an event suspends nobody who works. A suspended Task costs nothing, and the log of the front names every Task that it suspends and wakes.
+
+A storage failure, such as a full `/workspace`, blocks the kernel of a Task. The kernel writes nothing, keeps its open runs in their last state, and sends no event, so the view shows those runs as running. The controller therefore also reads the status of a busy Task at most once per interval. A busy Task has a queued or running run in the view. After a storage failure, the body of the status says `blocked: true` with `blockedReason`, and `idle: true` since the failure.
+
+If the body says `blocked`, the front suspends the Task at once and marks the member with the reason. A busy Task that is not blocked stays awake, because its runs can work slowly. A run that a read of the front shows with the field `blocked` does not count as working.
+
+The mark shows in the field `blockedReason` of the member in `GET /v1/fleet`, and the MCP tool `fleet` says `blocked by a storage failure` on the line of the member. The worker removes the secrets from the reason, and the front removes its own secrets too and cuts the reason to 2 KiB. The gauge `fw_fleet_members_blocked` counts the marked members (see [Observability](../deployment/observability.md#the-series-of-the-front)). Only a replica of the front that read the status marks the member, so take the maximum over the replicas.
+
+The front does not resume the Task itself. The next request through the router restarts it: a wake for a job, an approval, a message, or a run. The fresh process rebuilds from its ledger, and the next event of the member clears the mark. If the storage is still full, the fresh process can block again, and the controller suspends it again after the grace period. Repair the storage of the Task before you wake it. See [4.12 The suspend controller](../design/workbench-architecture.md#412-the-suspend-controller).
 
 The router wakes a suspended Task on the next request through the front: an approval, a message, a follow-up, or a run. The ax API does not learn of such a wake. The front therefore calls `ResumeTask` after every answer of a Task whose phase is not Running. A Task that sleeps reads no queue, so a job needs a wake of its own:
 
@@ -200,6 +212,10 @@ A team is a group of people and agents that work together. The teams of a person
 - `featherweight-workbench/fleet/read.go`
 - `featherweight-workbench/fleet/platform.go`
 - `featherweight-workbench/fleet/suspend.go`
+- `featherweight-workbench/fleet/view.go`
+- `featherweight-workbench/fleet/metrics.go`
+- `featherweight-workbench/dashboard/fleet.go`
+- `featherweight-workbench/fleet/suspend_test.go`
 - `featherweight-workbench/fleet/queues.go`
 - `featherweight-workbench/fleet/nats.go`
 - `featherweight-workbench/pools/config.go`

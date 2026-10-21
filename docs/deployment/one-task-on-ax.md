@@ -125,7 +125,9 @@ curl -s -H 'ate-target-actor: default/fw-hello' -H "Authorization: Bearer $TOKEN
      http://127.0.0.1:8001/v1/status
 ```
 
-`/readyz` and `/healthz` take no token. The native API takes the bearer token of `FW_API_TOKEN`. `GET /v1/status` answers a JSON body with `usage`, `pendingApproval`, `runs` (`active`, `inputRequired`, `total`), `idle`, and `idleSince`. See [the kernel architecture, section 11.8](../design/kernel-architecture.md#118-status-for-the-control-plane). For a run that starts children, send `"wait": false` and read `GET /v1/runs/<id>` until it ends, because a long request through a port-forward can break. The routes are in [HTTP API](../reference/http-api.md).
+`/readyz` and `/healthz` take no token. The native API takes the bearer token of `FW_API_TOKEN`. `GET /v1/status` answers a JSON body with `usage`, `pendingApproval`, `runs` (`active`, `inputRequired`, `total`), `idle`, and `idleSince`. After a storage failure, it adds `blocked: true` and `blockedReason`. See [the kernel architecture, section 11.8](../design/kernel-architecture.md#118-status-for-the-control-plane).
+
+For a run that starts children, send `"wait": false` and read `GET /v1/runs/<id>` until it ends, because a long request through a port-forward can break. The routes are in [HTTP API](../reference/http-api.md).
 
 ## How fw boots in a Task
 
@@ -137,7 +139,7 @@ curl -s -H 'ate-target-actor: default/fw-hello' -H "Authorization: Bearer $TOKEN
 4. If a binding has a `goal` and a model credential is present, it runs the `bootstrap` profile with that goal, under `AX_BOOTSTRAP_TIMEOUT`, ten minutes by default.
 5. It answers `/readyz` with 200, resumes the unfinished runs of the ledger, and serves.
 
-The merge of the Task into the configuration sets `listen` to `:80`, `maxRuns` to 1, `tools.files.root` to the first binding, `tools.files.perRun` on, `node` to `ax:<atespace>/<task>`, and `FW_ATESPACE`. `tools.user` becomes `65532` only when root has the capabilities for it, which the gVisor sandbox of Substrate does not give.
+The merge of the Task into the configuration sets `listen` to `:80`, `maxRuns` to 1, and `tools.files.root` to the first binding. It turns `tools.files.perRun` on, and it sets `tools.memory.scope` to `principal` when the key is empty. It also sets `node` to `ax:<atespace>/<task>` and `FW_ATESPACE`. `tools.user` becomes `65532` only when root has the capabilities for it, which the gVisor sandbox of Substrate does not give.
 
 The metadata endpoints serve the Task and the Workspaces as YAML to a process inside the sandbox, at the URL in `AX_METADATA_URL`:
 
@@ -221,6 +223,7 @@ Without `AX_TASK_YAML`, as under `ax ssh`, the lines read the manifests from the
 - `featherweight-kernel/cli/serve.go`
 - `featherweight-kernel/cmd/fw/main.go`
 - `featherweight-kernel/ax/config.go`
+- `featherweight-kernel/surface/view/status.go`
 - `featherweight-kernel/ax/manifest.go`
 - `featherweight-kernel/surface/axmeta/axmeta.go`
 - `featherweight-kernel/examples/ax/reviewer.yaml`

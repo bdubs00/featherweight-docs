@@ -59,7 +59,7 @@ The lines `fw: ax boot: ready`, `the environment is ready`, and the warning of t
 
 ### GET /v1/status
 
-`GET /v1/status` on the listener of the kernel gives the state of the agent at a glance: the usage, the oldest pending approval, the counts of runs, `idle`, and `idleSince` ([Kernel architecture, 11.8](../design/kernel-architecture.md#118-status-for-the-control-plane)). The front reads it through the router before it suspends a Task. Read it the same way:
+`GET /v1/status` on the listener of the kernel gives the state of the agent at a glance. The body holds the usage, the oldest pending approval, the counts of runs, `idle`, and `idleSince`. After a storage failure, it also gives `blocked` and `blockedReason` ([Kernel architecture, 11.8](../design/kernel-architecture.md#118-status-for-the-control-plane)). The front reads it through the router before it suspends a Task. Read it the same way:
 
 ```sh
 curl -sS -H 'ate-target-actor: default/fw-fleet-reviewer' -H "Authorization: Bearer $TOKEN" \
@@ -100,6 +100,35 @@ Work through these steps in order:
 4. Make sure that the image has a digest. Substrate pulls an actor image by digest only.
 5. Make sure that the registry answers: `curl -fsS http://localhost:5001/v2/`. If it does not, see the tunnel procedure below.
 6. If the Task runs a goal or a clone, `ax ssh` with `spec.debug` reaches the sandbox before the workspaces are ready.
+7. If the log holds the warning `another fw process holds the writer lock of the ledger`, read the section below.
+
+## The ledger lock at boot
+
+`fw` takes the writer lock of its file ledger at each boot. Another `fw` process can hold the lock, for example a `fw run` that a person started through `ax ssh` during a slow boot with `spec.debug`. The boot then tries again for up to 30 seconds and logs this warning every five seconds:
+
+```text
+fw: serve: another fw process holds the writer lock of the ledger; waiting for it
+```
+
+After 30 seconds, the boot fails with this error, followed by the error of the ledger with its root:
+
+```text
+cli: another fw process still holds the writer lock of the ledger after 30s, so this server cannot own the ledger; stop that process, such as fw run started through ax ssh, then start the server again
+```
+
+Stop the other process. If `fw` exited after the wait, read the phase of the Task with `ax describe task <task>` and start it again the way its phase allows. The message names an example of a holder and the ledger root, not the process that holds the lock. `fw run` and `fw replay` beside a running server fail at once with `fw: file ledger: another writer owns this root`.
+
+## A Task blocked by a storage failure
+
+A storage failure, such as a full `/workspace`, fail-stops the kernel of a Task. The process writes nothing and runs nothing until it restarts, and its open runs keep their last recorded state. The view of the front therefore shows those runs as running. Look in three places:
+
+- `GET /v1/status` of the Task, read as above. A blocked Task answers `blocked: true`, the cause in `blockedReason`, and `idle: true` with `idleSince` at the time of the failure.
+- The `fw` log of the Task, with the filter above. It holds one Error line, `storage failure; execution blocked until restart`, with the cause.
+- The gauge `fw_storage_blocked` of the Task, which is 1, and the alert `FwStorageBlocked` of `examples/observability`, which fires after one minute.
+
+The suspend controller of the front reads the status of a Task whose runs the view shows as working without events for the grace period. If the body says `blocked`, the front suspends the Task at once and marks the member with the reason. The member line of the MCP tool `fleet` then says `blocked by a storage failure`. The gauge `fw_fleet_members_blocked` of the front counts the member, and the example alert `FwFleetMemberBlocked` fires. The next request restores a fresh process, which rebuilds from the ledger and resumes the open runs ([The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure)).
+
+Repair the storage before the next request. If the storage is still full, the fresh process can block again, and the controller suspends it again after the grace period. A Task that the controller suspended wakes on the next request through the router, like any sleeping Task ([Workbench architecture, 4.12](../design/workbench-architecture.md#412-the-suspend-controller)).
 
 ## A run stuck in input-required
 
@@ -176,9 +205,13 @@ The fleet reaches Strata through the second tunnel, `fw-fleet-tunnel`, with the 
 - `featherweight-lab/e2e/fleet/tickets/RUNBOOK.md`
 - `featherweight-lab/e2e/fleet/tickets/FINDINGS.md`
 - `featherweight-kernel/README.md`
-- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 6.6, 7.12, 9.3, 11, and 21)
+- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 5.6, 6.6, 7.12, 9.3, 11, and 21)
 - `featherweight-kernel/cli/doctor_ax.go`
 - `featherweight-kernel/cli/doctor.go`
+- `featherweight-kernel/cli/serve.go`
+- `featherweight-kernel/fw/lifecycle.go`
+- `featherweight-kernel/surface/view/status.go`
+- `featherweight-kernel/examples/observability/alerts.yml`
 - `featherweight-kernel/cli/ax.go`
 - `featherweight-kernel/cli/verbs.go`
 - `featherweight-kernel/ax/config.go`
@@ -187,3 +220,5 @@ The fleet reaches Strata through the second tunnel, `fw-fleet-tunnel`, with the 
 - `featherweight-kernel/surface/native/native.go`
 - `featherweight-workbench/docs/ARCHITECTURE.md` (sections 3.1, 4.5, 4.12, 4.13, 11, and 13.9)
 - `featherweight-workbench/fleet/suspend.go`
+- `featherweight-workbench/fleet/metrics.go`
+- `featherweight-workbench/dashboard/fleet.go`
