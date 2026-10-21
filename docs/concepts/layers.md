@@ -80,7 +80,7 @@ A person tells Claude Code to migrate twelve Puppet modules.
 
 ## Why the kernel exists beside AX
 
-AX gives you a box and a freezer, and no view of what happens inside the box. A general agent framework inside the Task would keep the conversation in memory, so a suspend would lose the thread. It would not report idle, so nothing would know when a suspend is safe. It would run the whole tree of child agents on one service credential inside the sandbox. The kernel fixes those three things: a ledger that survives the freeze, an idle signal that makes the freeze automatic, and a token broker with budgets and policy, so that every box acts as a person within bounds. The [product direction](../design/product-direction.md#2-why-this-layer-exists) states the argument in full.
+AX gives you a box and a freezer, and no view of what happens inside the box. Put a general agent framework inside the Task instead, and three things go wrong. The framework keeps the conversation in memory, so a suspend loses the thread. Nothing reports idle, so nothing knows when a suspend is safe. The whole tree of child agents runs on one service credential inside the sandbox. The kernel fixes those three things: a ledger that survives the freeze, an idle signal that makes the freeze automatic, and a token broker with budgets and policy, so that every box acts as a person within bounds. The [product direction](../design/product-direction.md#2-why-this-layer-exists) states the argument in full.
 
 The value shows up when runs are long, when they wait on approvals or sign-ins, when many of them sleep most of the time, and when they fan out into trees. For a short batch job that never waits on a person, a plain container with any agent loop does about as well.
 

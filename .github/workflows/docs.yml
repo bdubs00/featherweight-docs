@@ -1,0 +1,51 @@
+# Builds the site and publishes it to GitHub Pages on every push to main.
+# The design documents come from the public kernel and workbench repositories,
+# which the job checks out next to this one, as sync.sh expects.
+# Turn on Pages for the repository once: Settings, Pages, Source "GitHub Actions".
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: featherweight-docs
+      - uses: actions/checkout@v4
+        with:
+          repository: bdubs00/featherweight-kernel
+          path: featherweight-kernel
+      - uses: actions/checkout@v4
+        with:
+          repository: bdubs00/featherweight-workbench
+          path: featherweight-workbench
+      - uses: astral-sh/setup-uv@v5
+      - run: make build
+        working-directory: featherweight-docs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: featherweight-docs/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
