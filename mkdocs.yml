@@ -1,0 +1,106 @@
+site_name: Featherweight
+site_description: Durable agents on Google AX and Agent Substrate. The kernel, the workbench, and the lab.
+site_url: https://bdubs00.github.io/featherweight-docs/
+repo_url: https://github.com/bdubs00/featherweight-kernel
+repo_name: bdubs00/featherweight-kernel
+edit_uri: ""
+docs_dir: docs
+strict: false
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Concepts:
+      - The four layers: concepts/layers.md
+      - The run lifecycle: concepts/run-lifecycle.md
+      - The ledger: concepts/ledger.md
+      - Safeguards: concepts/safeguards.md
+      - Profiles, tools, and skills: concepts/profiles-and-tools.md
+      - Context, memory, and time: concepts/context-memory-time.md
+      - Identity: concepts/identity.md
+      - The fleet: concepts/fleet.md
+  - Getting started:
+      - Run the kernel on your machine: getting-started/kernel-local.md
+      - Run the workbench on your machine: getting-started/workbench-local.md
+      - Use a fleet from Claude Code: getting-started/from-claude-code.md
+  - Reference:
+      - fw commands: reference/fw-commands.md
+      - fw-workbench commands: reference/fw-workbench-commands.md
+      - Configuration: reference/configuration.md
+      - HTTP API: reference/http-api.md
+      - MCP tools: reference/mcp-tools.md
+  - Deployment:
+      - Build and images: deployment/images.md
+      - One Task on AX: deployment/one-task-on-ax.md
+      - A fleet: deployment/fleet.md
+      - Observability: deployment/observability.md
+  - Operations:
+      - The homelab cluster: operations/homelab.md
+      - Testing: operations/testing.md
+      - Debugging a Task: operations/debugging.md
+      - Platform gaps and patches: operations/platform-gaps.md
+  - Design documents:
+      - About these documents: design/index.md
+      - Kernel architecture: design/kernel-architecture.md
+      - Kernel map: design/kernel-map.md
+      - Kernel roadmap: design/kernel-roadmap.md
+      - Workbench architecture: design/workbench-architecture.md
+      - Product direction: design/product-direction.md
+  - Glossary: glossary.md
