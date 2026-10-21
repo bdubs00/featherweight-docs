@@ -8,9 +8,13 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **actor**: a program in a gVisor sandbox that Agent Substrate starts, suspends, and resumes. An AX Task runs as one actor. See [The four layers](concepts/layers.md).
 
+**admission**: the bound on the root runs that one process takes on: `maxRuns` that work and `maxQueuedRuns` that wait, 64 by default. A full process answers 429 with `Retry-After`. See [The run lifecycle](concepts/run-lifecycle.md#admission).
+
 **agentgateway**: the gateway that the lab puts in front of the front, so that one URL serves `/mcp`, `/ui`, and `/v1`. In the lab it cuts a call after ten seconds. See [A fleet](deployment/fleet.md) and [The homelab cluster](operations/homelab.md).
 
 **approval**: a hold on a tool call that the policy marks `ask`. The run waits in the state `input-required` until a person allows or denies the call. See [Safeguards](concepts/safeguards.md).
+
+**arming**: the step in which the host of a harness marks a memory call that the policy allowed. The memory server `fw-memory` then makes that call alone, with the same tool and input, within two minutes. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#the-package-harness).
 
 **atenet router**: the Substrate proxy that sends a request to the actor named in the header `ate-target-actor`, and wakes a suspended actor first. It is the only door into an actor. See [The four layers](concepts/layers.md) and [section 11.4 of the kernel architecture](design/kernel-architecture.md#114-addressing-through-the-atenet-router).
 
@@ -54,11 +58,15 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 ## F
 
+**fail-stop**: the state of a process after its first storage failure. Every write is blocked, `/readyz` answers 503, and only a restart resumes the work from the ledger. See [The ledger](concepts/ledger.md#fail-stop-on-a-storage-failure).
+
 **fleet**: a set of workers and one front. The front reads the Task list from the AX API and the runs from the egress stream. See [The fleet](concepts/fleet.md).
 
 **fork**: the MCP tool and the route `POST /v1/runs/{id}/fork` that branch a run. With `spawn`, the branch runs in a Task of its own. See [The ledger](concepts/ledger.md).
 
 **front**: `fw-workbench` outside the sandboxes, as a Deployment. It serves people over `/ui` and `/mcp`, keeps the grants, brokers tokens, sends jobs, and suspends idle Tasks. See [The fleet](concepts/fleet.md).
+
+**fw-memory**: the MCP server that gives a hosted harness the memory, on the loopback route `/v1/harness/memory/<secret>` of the native API. Its tools are `recall`, `list`, `remember`, and `forget`. See [Profiles, tools, and skills](concepts/profiles-and-tools.md#the-package-harness).
 
 ## G
 
@@ -96,7 +104,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **member**: one `fw` process of a fleet, named `<atespace>/<task>` under AX, in the state `live`, `quiet`, or `stopped`. See [The fleet](concepts/fleet.md).
 
-**memory**: the tool and the notes that persist between runs under `<home>/memory`, one directory per profile. The system prompt lists each note. See [Context, memory, and time](concepts/context-memory-time.md).
+**memory**: the durable state that a later run can use. Its notes are Markdown files under `<home>/memory`, in the scope of the run. The first user message lists them as data, never the system prompt. The tools `memory` and `recall` and the routes `/v1/memory` reach them. See [Context, memory, and time](concepts/context-memory-time.md#memory).
 
 ## O
 
@@ -116,6 +124,8 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **principal**: the identity of a caller: a subject, a name, a kind (`user`, `workload`, `token`, `local`, or `anonymous`), groups, and scopes. See [Identity](concepts/identity.md).
 
+**principal scope**: the memory scope `principal`: one directory of notes for each person in each profile, under a hash of the subject of the person. A profile that more than one person runs takes it. See [Context, memory, and time](concepts/context-memory-time.md#the-store-and-its-scopes).
+
 **profile**: a named agent configuration: a system prompt, instructions, tools, skills, a model, an effort, a time zone, a policy, a budget, and an access block. See [Profiles, tools, and skills](concepts/profiles-and-tools.md).
 
 ## Q
@@ -124,6 +134,8 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 ## R
 
+**recall**: the built-in tool that searches notes, earlier runs, workspace files, and skills, and reads one record by its ref. It is read-only. See [Context, memory, and time](concepts/context-memory-time.md#the-recall-tool).
+
 **replay**: `fw replay <run> --model <selector>`, which runs a recorded run again against another model with the recorded tool results. See [The ledger](concepts/ledger.md).
 
 **resume**: the rebuild of an unfinished run from its ledger at the start of the process, after a restart or a wake. See [The run lifecycle](concepts/run-lifecycle.md).
@@ -131,6 +143,8 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 **run**: one conversation with one profile, one budget, and one ledger. Its states are `queued`, `running`, `input-required`, `completed`, `failed`, `canceled`, and `suspended`. See [The run lifecycle](concepts/run-lifecycle.md).
 
 ## S
+
+**scope (memory)**: the notes that a run reads and writes: `agent`, `principal`, or `shared`, from `tools.memory.scope`. The kernel builds it from the run, never from the input of a call. See [Context, memory, and time](concepts/context-memory-time.md#the-store-and-its-scopes).
 
 **skill**: a directory with a `SKILL.md` file under `skills/`. The system prompt lists it, and the tool `skill` reads it. See [Profiles, tools, and skills](concepts/profiles-and-tools.md).
 
@@ -154,7 +168,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **token broker**: the route `POST /v1/tokens` of the front, from which a worker gets a short-lived access token of a person for one run. The refresh token stays on the front. See [Identity](concepts/identity.md) and [section 11.9 of the workbench architecture](design/workbench-architecture.md#119-the-token-broker).
 
-**tool**: a function that the model calls. The built-in tools are `bash`, `files`, `http`, `memory`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`. Other tools come from an MCP server or an A2A peer. See [Profiles, tools, and skills](concepts/profiles-and-tools.md).
+**tool**: a function that the model calls. The built-in tools of the default list are `bash`, `files`, `http`, `memory`, `recall`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`. Other tools come from an MCP server or an A2A peer. See [Profiles, tools, and skills](concepts/profiles-and-tools.md).
 
 **tool user**: the user that runs `bash` and the stdio MCP servers, from `tools.user`. Under AX with `fw` as root, it is `nonroot`, uid 65532, and it cannot read `/workspace/.fw`. See [Safeguards](concepts/safeguards.md) and [section 7.12 of the kernel architecture](design/kernel-architecture.md#712-tool-processes).
 

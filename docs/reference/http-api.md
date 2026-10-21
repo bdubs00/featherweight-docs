@@ -23,6 +23,10 @@ A few routes need no credential. They are the agent card, `/healthz`, `/readyz`,
 
 With `wait: true`, the call blocks until the run finishes or needs input. With the header `Accept: text/event-stream`, the same call streams the events as they happen and then closes.
 
+Admission bounds the work of one process. `maxRuns` bounds the root runs that work at once, and `maxQueuedRuns` bounds the root runs that wait behind them. If both are full, `POST /v1/runs` answers 429 with `Retry-After: 5`. A follow-up, a decision, or a branch that needs a new driver gets the same answer, and a refused follow-up changes nothing of the run. Retry with the same `Idempotency-Key`. A start that the process already accepted returns its run without a new admission. See [The run lifecycle](../concepts/run-lifecycle.md#admission).
+
+After a storage failure, a route that writes answers 503, and the process accepts no work until it restarts. See [The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure).
+
 ```sh
 curl -s -X POST http://localhost:8080/v1/runs \
   -H "Authorization: Bearer $FW_API_TOKEN" -H "Content-Type: application/json" \
@@ -74,6 +78,34 @@ curl -s "http://localhost:8080/v1/runs/$RUN/files/report.md?download=1" \
   -H "Authorization: Bearer $FW_API_TOKEN"
 ```
 
+## Memory
+
+The memory routes search the memory of an agent and read and write its notes without a run. The design document lists them in [section 8.2](../design/kernel-architecture.md#82-native-api). The concepts are on [Context, memory, and time](../concepts/context-memory-time.md#memory).
+
+| Method and path | Request | Response |
+|---|---|---|
+| `GET /v1/memory` | Query: `agent`, the profile, `default` when absent. `q`, the words, required. `kinds`, a comma list of `note`, `run`, and `skill`, all three when absent. `limit`, 10 by default and 50 at most | `{"scope", "hits"}`. Each hit holds `record`, `score`, `snippet`, and `why` |
+| `GET /v1/memory/notes` | Query: `agent` | `{"scope", "notes"}`, newest first, without their text |
+| `GET /v1/memory/notes/{path}` | Query: `agent`. The header `Accept: text/markdown` or `text/plain` asks for the text alone | The note with its `hash`, which the header `ETag` repeats |
+| `PUT /v1/memory/notes/{path}` | Query: `agent`. The body is the text of the note. `If-Match` with the hash of the current note, quoted or weak, makes the write a compare-and-swap. `If-Match: *` writes only a note that exists, and `If-None-Match: *` writes only a new note | The note with its new hash and `ETag`. 412 when the note differs from the condition |
+| `DELETE /v1/memory/notes/{path}` | Query: `agent` | 204. A directory answers 400 |
+
+The kernel builds the scope from the agent of the query and the principal of the request, never from a field. A caller therefore reaches only the notes that a run of that caller reaches. The roles decide the rest:
+
+- Reading needs `agent.run` on the agent.
+- Writing or deleting a note of the scope `agent` or `shared`, which every person of the agent reads, needs `agent.edit`.
+- Writing or deleting a note of the scope `principal` needs `agent.run`.
+
+The kind `file` belongs to the tool `recall` of a run, so `GET /v1/memory` answers 400 for it. An unknown agent answers 404, and a missing note answers 404 too. A body over 128 KB, and a write past the limit of 2,000 notes in one scope, answer 413. A path with a part that starts with `.` answers 400. Each write and each delete goes to the log of the process with the agent, the scope, and the ref.
+
+```sh
+curl -s -X PUT "http://localhost:8080/v1/memory/notes/build.md?agent=default" \
+  -H "Authorization: Bearer $FW_API_TOKEN" -H "Content-Type: text/markdown" \
+  -H "If-None-Match: *" --data-binary @build.md
+```
+
+A host of a harness also serves the route `/v1/harness/memory/<secret>`, the MCP server `fw-memory` of a hosted run. It answers only a caller on the loopback address, and an unknown secret gets 404. See [Profiles, tools, and skills](../concepts/profiles-and-tools.md#the-package-harness).
+
 ## Status, tools, skills, and agents
 
 | Method and path | Response |
@@ -114,7 +146,7 @@ curl -s http://localhost:8080/.well-known/agent-card.json
 | Method and path | Response |
 |---|---|
 | `GET /healthz` | 200 `ok` once the process is up |
-| `GET /readyz` | 503 `not ready` until the agent is ready, then 200 `ready`. Under ax, it drives the `WorkspaceReady` condition |
+| `GET /readyz` | 503 `not ready` until the agent is ready, then 200 `ready`. After a storage failure, 503 `storage failed; execution blocked until restart`. Under ax, it drives the `WorkspaceReady` condition |
 | `GET /metrics` | The Prometheus registry. `telemetry.metrics` renames the route |
 
 The three routes carry no authentication. During the ax boot, every path except `/healthz` answers 503 with `Retry-After: 5`. Under ax, the process also serves `GET /metadata/v1alpha1/ax/task` and `GET /metadata/v1alpha1/ax/workspaces` on `127.0.0.1:8099`, for the guest services of `ax ssh`.
@@ -173,6 +205,12 @@ The front builds three routes itself from the run and the events of the owner, b
 - `featherweight-kernel/surface/native/native.go`
 - `featherweight-kernel/surface/native/manage.go`
 - `featherweight-kernel/surface/native/files.go`
+- `featherweight-kernel/surface/native/memory.go`
+- `featherweight-kernel/memory/store.go`
+- `featherweight-kernel/memory/recall.go`
+- `featherweight-kernel/harness/memory.go`
+- `featherweight-kernel/fw/lifecycle.go`
+- `featherweight-kernel/fw/kernel.go`
 - `featherweight-kernel/surface/native/sse.go`
 - `featherweight-kernel/surface/native/extend.go`
 - `featherweight-kernel/surface/a2a/a2a.go`

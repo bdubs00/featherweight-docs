@@ -58,7 +58,9 @@ The body of `POST /v1/runs` and the tool `run` of the workbench take the fields 
 
 The default prompt tells the model to work in small steps and to read before it writes. It forbids a push, a merge, a delete, or a send on the own judgment of the model. The prompt holds no text from a user or a tool.
 
-A `Briefer` adds the rest. A tool that implements `fw.Briefer` returns a section at the start of the run, with the agent and the run in its context. The `memory` tool adds the index of its notes, and the `clock` tool adds the date. The kernel records that text in `fw.run.started` as `brief`. The prompt therefore stays the same for the life of the run, and its cached prefix stays valid. A resume and a replay see the same prompt.
+A `Briefer` adds the rest. A tool that implements `fw.Briefer` returns a section at the start of the run, with the agent and the run in its context. The `memory` tool adds the section `# Memory`, which holds no note, and the `clock` tool adds the date. The kernel records that text in `fw.run.started` as `brief`. The prompt therefore stays the same for the life of the run, and its cached prefix stays valid. A resume and a replay see the same prompt.
+
+Data from a tool never goes into the system prompt. A tool that implements `fw.ContextBriefer`, such as `memory` with the index of its notes, returns data for the start of the first user message. The kernel records it in `fw.run.started` as `context` and wraps it in a `<context>` block that names the tool. The system prompt then gets one sentence, `fw.ContextNote`, which says that such a block holds data and not instructions. See [Context, memory, and time](../concepts/context-memory-time.md#the-index-is-data-not-an-instruction).
 
 ## Skills
 
@@ -77,14 +79,15 @@ The tool `skill` reads a skill on demand. Without a name it lists every skill. W
 
 ## The built-in tools
 
-The package `tools/builtin` registers each tool in `init` through `fw.RegisterTool`. `tools.builtin` in `fw.yaml` names the tools of the process. Its default list is `bash`, `files`, `http`, `memory`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`. The package also registers `send`, which the default list in `examples/fw.yaml` leaves out. Each profile selects from the list with `tools`.
+The package `tools/builtin` registers each tool in `init` through `fw.RegisterTool`. `tools.builtin` in `fw.yaml` names the tools of the process. Its default list is `bash`, `files`, `http`, `memory`, `recall`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`. The package also registers `send`, which the default list in `examples/fw.yaml` leaves out. Each profile selects from the list with `tools`.
 
 | Tool | What it does | Flags |
 |---|---|---|
 | `bash` | Runs a command in one shell per run, with the environment of a tool process | destructive |
 | `files` | Views, creates, and edits files under the root of the workspace | none |
 | `http` | Fetches a URL that matches a glob of `tools.http.allow`, with GET or POST | read-only, idempotent, parallel-safe |
-| `memory` | Keeps notes between runs under `/memories` | idempotent |
+| `memory` | Keeps notes between runs under `/memories`, in the scope of the run | none |
+| `recall` | Searches and reads notes, earlier runs, workspace files, and skills | read-only, idempotent, parallel-safe |
 | `skill` | Lists the skills, or reads one skill with its files | read-only, idempotent, parallel-safe |
 | `clock` | Gives the time in the zone of the run and the working time left | read-only, idempotent, parallel-safe |
 | `ask_user` | Asks the caller a question and waits for the answer | read-only |
@@ -113,7 +116,7 @@ The package `tools/a2a` turns each entry under `tools.peers` into one tool named
 
 ## Parallel-safe tools
 
-A tool with the flag `ParallelSafe` can run beside other calls. When one response holds several tool calls, the kernel runs consecutive parallel-safe calls at the same time (`execute` in `fw/turn.go`). Every other call runs alone. The results are recorded in the order of the calls. `http`, `skill`, `clock`, `spawn_task`, `await_task`, and `ask_<peer>` are parallel-safe. A model that needs three things done therefore starts three children in one response. A replay drops the flag, so the recorded results are consumed in order.
+A tool with the flag `ParallelSafe` can run beside other calls. When one response holds several tool calls, the kernel runs consecutive parallel-safe calls at the same time (`execute` in `fw/turn.go`). Every other call runs alone. The results are recorded in the order of the calls. `http`, `recall`, `skill`, `clock`, `spawn_task`, `await_task`, and `ask_<peer>` are parallel-safe. A model that needs three things done therefore starts three children in one response. A replay drops the flag, so the recorded results are consumed in order.
 
 ## The tool user and the per-run directory
 
@@ -126,6 +129,21 @@ The package `env` gives an agent packages on the durable volume. The block `envi
 ## The package `harness`
 
 The block `harness` of `fw.yaml` makes the kernel host an agent program that people use on their laptops: `kind: opencode` or `kind: claude-code`. Every run of the process then becomes a session of that program instead of a run of the turn loop. The kernel keeps what makes a run durable: one ledger, one policy, one approval surface, and an idle run while a person decides. The program asks the kernel about each tool call, and the kernel answers from the policy of the run. A call that the policy asks about becomes `fw.approval.requested`, and after the decision, also after a cold boot, the kernel continues the same session. `home` names the directory of the sessions, `/workspace/.harness` under ax. The build tag `harness` links the package. See [section 19](../design/kernel-architecture.md#19-hosted-harnesses).
+
+If its profile allows the tool `memory`, a hosted run gets the memory as a run of the turn loop does. The host reads that from `tools.builtin` and the tool list of the resolved profile, and it ignores the tool lists of ancestor profiles. A profile that allows `recall` alone gets only the tool `recall` of the server, without the memory section and the index. For a run whose profile allows `memory`, the added system text holds the memory section and `fw.ContextNote`. Between the two, a note names the tools of the memory server. It follows the instructions of the run and never holds a note. The index of the notes goes as data, in a `<context source="memory">` block, to the start of the first prompt of the session. The `fw.harness.event` of the kind `fw.prompt` for that prompt records `context: true`, so a resumed session never gets the block twice.
+
+The native API serves the MCP server `fw-memory` on the loopback route `/v1/harness/memory/<secret>`, with four tools:
+
+- `recall` searches the memory, and with a ref or the path of a note reads one record.
+- `list` shows every note with its first line.
+- `remember` writes the whole text of a note, with an optional hash for a compare-and-swap.
+- `forget` deletes one note.
+
+Claude Code gets the server in `--mcp-config` and names its tools `mcp__fw-memory__recall`, `mcp__fw-memory__list`, `mcp__fw-memory__remember`, and `mcp__fw-memory__forget`. opencode gets it in the block `mcp` of `OPENCODE_CONFIG_CONTENT` and names them `fw-memory_recall`, `fw-memory_list`, `fw-memory_remember`, and `fw-memory_forget`. The policy rule `*fw-memory*` matches both. A rule on one tool must use the name that the harness reports: `mcp__fw-memory__remember: path=private/*` for Claude Code, and `fw-memory_remember: path=private/*` for opencode. A rule on the tools `memory` or `recall` of the turn loop covers no hosted call. `recall` and `list` are read-only, and `remember` and `forget` have no flag. If the profile of the run does not allow `memory`, the host denies a call of the server before the policy decides. A profile that allows `recall` alone keeps the tool `recall` of the server.
+
+The server makes only a call that the policy of a run allowed. The host allows a call of a memory tool in the hook of Claude Code, or in its answer to a permission of opencode. At that moment it arms the call for its run. The call that reaches the server must match an armed call by tool and exact input, and an armed call expires after two minutes. The server makes the call in the memory scope of that run. Each write appends `fw.memory.changed` to the ledger of the run, without the text.
+
+The server is a route of the native API. `fw run` serves no route, so a harness under `fw run` gets the memory section and the index but no working memory server. If `tls.provider` is set, or if the native surface is off, the same holds. The log says nothing about it (`memBase` in `harness/memory.go`). See [section 19.10](../design/kernel-architecture.md#1910-memory) and the limits in [section 19.9](../design/kernel-architecture.md#199-limits).
 
 ## Outcomes
 
@@ -152,6 +170,8 @@ A profile or a request can carry an `outcome` block with `rubric`, `grader`, and
 - `featherweight-kernel/tools/builtin/files.go`
 - `featherweight-kernel/tools/builtin/http.go`
 - `featherweight-kernel/tools/builtin/memory.go`
+- `featherweight-kernel/tools/builtin/recall.go`
+- `featherweight-kernel/fw/runcontext.go`
 - `featherweight-kernel/tools/builtin/skill.go`
 - `featherweight-kernel/tools/builtin/clock.go`
 - `featherweight-kernel/tools/builtin/ask_user.go`
@@ -163,6 +183,10 @@ A profile or a request can carry an `outcome` block with `rubric`, `grader`, and
 - `featherweight-kernel/env/env.go`
 - `featherweight-kernel/env/tool.go`
 - `featherweight-kernel/harness/harness.go`
+- `featherweight-kernel/harness/core.go`
+- `featherweight-kernel/harness/memory.go`
+- `featherweight-kernel/harness/claudecode.go`
+- `featherweight-kernel/harness/opencode.go`
 - `featherweight-kernel/examples/fw.yaml`
 - `featherweight-kernel/examples/skills/release-notes/SKILL.md`
 - `featherweight-kernel/docs/ARCHITECTURE.md` (sections 7, 12.5, 18, 19, and 20)

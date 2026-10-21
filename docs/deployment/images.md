@@ -12,7 +12,7 @@ make test                       # runs every test with the race detector
 make GO=/opt/go/bin/go build    # the same build with another toolchain
 ```
 
-`make build` runs `go build` with `CGO_ENABLED=0`, `-trimpath`, and `-ldflags "-s -w -X main.version=$(VERSION)"`. `VERSION` is `git describe --tags --always --dirty`, or `dev` outside a checkout. The Makefile also has `vet`, `fmt`, `run`, and `clean`. `make run` builds and starts `serve`.
+`make build` runs `go build` with `CGO_ENABLED=0`, `-trimpath`, and `-ldflags "-s -w -X main.version=$(VERSION)"`. `VERSION` is `git describe --tags --always --dirty`, or `dev` outside a checkout. The Makefile also has `vet`, `fmt`, `run`, and `clean`. `make run` builds and starts `serve`. In the kernel, `make test` runs the packages `memory`, `tools/builtin`, and `surface/native` a second time with the tag `memory_sqlite`.
 
 The workbench builds against the kernel checkout next to it. The `replace` directive in its `go.mod` points the module `github.com/bdubs00/featherweight-kernel` at `../featherweight-kernel`. Clone both repositories into one directory:
 
@@ -81,6 +81,13 @@ The distroless base holds the user `nonroot`, uid and gid 65532. `Dockerfile.too
 
 The README of the kernel and section 15 of its architecture list the tags without `env` and `harness`. The code of `cmd/fw/driver_env.go` and `cmd/fw/driver_harness.go` has them, so the code wins.
 
+One more tag adds a capability and links no driver. `memory_sqlite` adds a SQLite FTS5 index of the memory notes to the full build or to the lean build alike (`memory/index_fts.go`). The index comes from the pure-Go module `modernc.org/sqlite`, so the build needs no cgo, and the binary stays static. Section 15 of the kernel architecture puts the cost at about 4 MB. Without the tag, a search of the memory scans the notes. `fw doctor` names the index of the build: `scan` or `sqlite-fts5`. See [Context, memory, and time](../concepts/context-memory-time.md#the-search-index).
+
+```sh
+make build TAGS=memory_sqlite
+make image-toolbox TAGS=lean,nats,openai,oidc,metrics,memory_sqlite
+```
+
 A configuration that names a driver that the build left out stops at the start with the name of the driver. A surface or a built-in tool that the build left out is skipped with a warning. A worker that pushes its metrics over OTLP still needs the tag `metrics`, because the push reads the registry of the metrics surface (see [Observability](observability.md)). A worker that people reach through the front needs `oidc`, because the front forwards their credentials.
 
 The variable `TAGS` goes to `go build -tags` in the Makefile and to the build argument `TAGS` in the Dockerfiles. This builds a lean worker image with the drivers that the lab uses, on the toolbox base:
@@ -137,6 +144,9 @@ The k3s loop of the end-to-end tests builds its own image. `e2e/k3s/run.sh` buil
 - `featherweight-kernel/README.md`
 - `featherweight-kernel/cmd/fw/main.go`
 - `featherweight-kernel/cmd/fw/drivers.go`
+- `featherweight-kernel/memory/index_fts.go`
+- `featherweight-kernel/memory/index_scan.go`
+- `featherweight-kernel/go.mod`
 - `featherweight-kernel/cmd/fw/driver_a2a.go`
 - `featherweight-kernel/cmd/fw/driver_anthropic.go`
 - `featherweight-kernel/cmd/fw/driver_env.go`

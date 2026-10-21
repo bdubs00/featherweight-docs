@@ -38,7 +38,9 @@ stateDiagram-v2
 
 ## How a run starts
 
-Every start appends `fw.run.queued`. The event holds the input, the agent name, the instructions, the inline profile, the budget, the metadata, the origin, the principal, and the resolved profile. A resume and a replay therefore see the same request. Then the kernel launches a driver, one goroutine that owns the run (`launchLocked` in `fw/kernel.go`). A request with an idempotency key that the process saw before returns the first run.
+Every start appends `fw.run.queued`. The event holds the input, the agent name, the instructions, the inline profile, the budget, the metadata, the origin, the principal, and the resolved profile. A resume and a replay therefore see the same request. Then the kernel launches a driver, one goroutine that owns the run (`launchLocked` in `fw/kernel.go`).
+
+A request with an idempotency key that the process saw before returns the first run. A second start with the same key that arrives while the first start is in progress waits for the durable acceptance of the first start. Then it shares the result, the run or the error. If that waiter gives up, the first start goes on.
 
 | Entry | What starts the run | Origin |
 |---|---|---|
@@ -53,13 +55,28 @@ When `fw.run.queued` of a job is in the ledger, the bus intake acknowledges the 
 
 `fw run` takes the flags `--agent`, `--json`, and `--no-approve`. The profile flags are `--system`, `--instructions` (or `-i`), `--tools`, `--skills`, `--model`, `--effort`, and `--time-zone`. The budget flags are `--max-turns`, `--deadline`, and `--max-tool-calls`. The profile flags build an inline profile for this one run (see [Profiles, tools, and skills](../concepts/profiles-and-tools.md)). The command reference is [fw commands](../reference/fw-commands.md).
 
+## Admission
+
+Admission bounds the root runs that one process takes on (`fw/lifecycle.go`). The kernel reserves a place for a run before it appends the event that starts its work. `maxRuns`, or `FW_MAX_RUNS`, bounds the root runs that work at the same time: 16 by default, or 1 under ax. `maxQueuedRuns`, or `FW_MAX_QUEUED_RUNS`, bounds the root runs that the process admits beyond that and that wait for a working slot. Zero takes the default of 64.
+
+A process therefore admits at most `maxRuns + maxQueuedRuns` root drivers for new work. A start, a branch, a follow-up, and a decision that starts a driver each reserve a place first. When no place is free, the kernel returns `fw.ErrSaturated` with a `fw.SaturationError` that names both limits. The native API answers 429 with `Retry-After: 5`. Retry with the same idempotency key. The A2A surface maps the same error to an internal error, which a client does not retry (`mapErr` in `surface/a2a/handler.go`). The bus intake returns the job to the queue for another delivery. A decision and a follow-up on an accepted run take a place from the same pool as new starts. An approval can therefore get a 429 while the process is full. A start that the process already accepted returns its run without another admission.
+
+These rules decide who holds a place:
+
+- A follow-up reserves its place before it stores its attachments or records a budget change. A refused follow-up therefore changes nothing of the run. If a driver that is already active takes the message, the place goes back.
+- A branch that waits for a decision holds no place until the decision starts its driver.
+- A child run takes no root place. The `spawn` limits and the limits of its tree bound it. A parent that waits for its children therefore never takes the places that they need.
+- If a change of the configuration lowered the limits, the kernel still resumes at boot the work that the ledger already accepted.
+
+The limits bound admission, not the history: finished and idle runs stay readable. See [section 5.6](../design/kernel-architecture.md#56-process-duties).
+
 ## The turn loop
 
-A turn is one model call and the tool calls that it requests. The driver runs `drive` in `fw/turn.go`. At each step it reads the log of the run, builds a cursor with `analyze`, and does the next action. The cursor says whether the run started, whether a turn is open, what the latest response was, and which tool calls still need a result. Because the next action comes from the log alone, the same loop serves a new run, a follow-up, a decision, and a restart.
+A turn is one model call and the tool calls that it requests. The driver runs `drive` in `fw/turn.go`. At each step it reads the cursor of the run (`executionCursor` in `fw/cursor.go`) and does the next action. The cursor reads the log once and then takes up only the events after its last step. The cursor says whether the run started, whether a turn is open, what the latest response was, and which tool calls still need a result. Because the next action comes from the log alone, the same loop serves a new run, a follow-up, a decision, and a restart.
 
 The steps are these:
 
-1. `stepStart` appends `fw.run.started` with the model, the tool names, the brief, and the time zone of the run. The brief is the text that tools add to the system prompt.
+1. `stepStart` appends `fw.run.started` with the model, the tool names, the brief, the context, and the time zone of the run. The brief is the text that tools add to the system prompt. The context is the data that tools add to the first user message, such as the memory index.
 2. `stepModel` checks the budget. If the context is too large, it compacts the context. If a time note or a budget note is due, it adds the note. Then it appends `fw.turn.started` and `fw.model.requested`, calls the model, and appends `fw.model.responded`.
 3. `stepResponse` acts on the stop reason of the response.
 4. `stepTools` runs the loop guard, decides each tool call with the policy, and runs the allowed calls. It appends one `fw.tool.requested` and one `fw.tool.responded` per call. Consecutive parallel-safe calls run at the same time. Then it closes the turn with `fw.turn.finished`.
@@ -108,7 +125,7 @@ At start, `rebuild` in `fw/resume.go` reads the run index, projects every run, a
 The driver then continues from the last complete point in the log:
 
 - A `fw.model.requested` without a response sends the request again. This holds for the final report call too.
-- If the tool is idempotent, a `fw.tool.requested` without a result runs the tool again. Otherwise the kernel asks for an approval with the reason `rerun after resume`. Two tools are exceptions: `ask_user`, which finishes from the recorded question and answer, and a call that waited for a connection.
+- If the tool is idempotent, a `fw.tool.requested` without a result runs the tool again. Otherwise the kernel asks for an approval with the reason `rerun after resume`. Two tools are exceptions: `ask_user`, which finishes from the recorded question and answer, and a call that waited for a connection. The tool `memory` is not idempotent, because `insert` and some `str_replace` calls change a note again. An interrupted memory call therefore asks for an approval, and an approval can repeat an edit that already took effect.
 - A pending `fw.approval.requested` waits for its decision.
 
 The working time of the run ends at the last event before the gap (`fw.WorkingTime` in `fw/clock.go`). The time that a Task sleeps therefore does not count against the deadline. The system prompt, the brief, and the raw provider blocks come from the ledger unchanged. The woken container therefore keeps the prompt cache prefix of the provider. The design document describes this in [section 4.5](../design/kernel-architecture.md#45-resume) and [section 11.5](../design/kernel-architecture.md#115-suspend-and-resume).
@@ -125,6 +142,10 @@ Before every model call, `stepModel` compares the usage of the run with its budg
 
 The text becomes the output of the run, which finishes as `failed` with an error such as `budget exceeded: deadline`. At a limit of tokens or of cost the run stops at once, because the report call spends money. `budget.finalReport: false` turns the report off. The limits, the notes at 75 and 90 percent, and the loop guard are on [Safeguards](../concepts/safeguards.md).
 
+## A storage failure
+
+The first failure of a ledger append, or of a read of a run for its driver, fail-stops the process. The process then stops its work and its writes until a restart. The kernel cancels the local work and blocks every write. `/readyz` answers 503, `Agent.RuntimeError` keeps the cause, and each open run shows the field `blocked` beside its last recorded state. A caller that waits for a run gets `fw.ErrStorageUnavailable`. The kernel appends nothing more, not even a terminal event, so the runs keep the state that the ledger holds. Repair the storage and restart the process, and the restart resumes the runs from the ledger. See [The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure).
+
 ## Cancel
 
 `POST /v1/runs/{id}/cancel`, the tool `cancel` of the workbench, and `Agent.Cancel` cancel a run. The kernel stops the model call or the tools in flight and appends `fw.run.finished` with the outcome `canceled`. Then it cancels every open run under it, at any depth, in this process and in other processes. A cancel of a finished run appends nothing to it and still cancels the open runs under it. A branch is a run of its own, so a cancel of its source leaves it alone.
@@ -135,6 +156,10 @@ The text becomes the output of the run, which finishes as `failed` with an error
 - `featherweight-kernel/fw/event.go`
 - `featherweight-kernel/fw/projection.go`
 - `featherweight-kernel/fw/kernel.go`
+- `featherweight-kernel/fw/lifecycle.go`
+- `featherweight-kernel/fw/cursor.go`
+- `featherweight-kernel/fw/config.go`
+- `featherweight-kernel/tools/builtin/memory.go`
 - `featherweight-kernel/fw/turn.go`
 - `featherweight-kernel/fw/resume.go`
 - `featherweight-kernel/fw/intake.go`
@@ -152,7 +177,7 @@ The text becomes the output of the run, which finishes as `failed` with an error
 - `featherweight-kernel/surface/a2a/a2a.go`
 - `featherweight-kernel/surface/a2a/handler.go`
 - `featherweight-kernel/tools/builtin/child.go`
-- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 3, 5, and 11)
+- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 3, 4.5, 5, and 11)
 - `featherweight-kernel/docs/KERNEL_MAP.md` (section 2)
 - `featherweight-workbench/docs/ARCHITECTURE.md` (section 4.12)
 - `featherweight-workbench/docs/PRODUCT_DIRECTION.md` (section 3.1)

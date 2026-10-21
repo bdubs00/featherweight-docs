@@ -1,6 +1,6 @@
 # Observability
 
-`fw` serves Prometheus metrics at `/metrics`, and it pushes its metrics, its ledger, and its traces to an OpenTelemetry collector when the standard `OTEL_*` variables name one. This page lists the metric families, the rule for their labels, the series of the front, the export, the example setup of the kernel, and the checks of the lab. The ledger, an append-only log of the run, stays the exact record of usage. Prometheus is for trends, errors, and latency, never for billing.
+`fw` serves Prometheus metrics at `/metrics`, and it pushes its metrics, its ledger, and its traces to an OpenTelemetry collector when the standard `OTEL_*` variables name one. This page lists the metric families, the measures of task quality, and the rule for their labels. It also covers the series of the front, the export, the example setup of the kernel, and the checks of the lab. The ledger, an append-only log of the run, stays the exact record of usage. Prometheus is for trends, errors, and latency, never for billing.
 
 ## The metrics endpoint
 
@@ -26,6 +26,15 @@ The route carries no authentication, because a scraper has no token. Keep it ins
 | `fw_runs_active` | gauge | `agent` |
 | `fw_run_duration_seconds` | histogram | `agent` |
 | `fw_run_turns` | histogram | `agent` |
+| `fw_task_completions_total` | counter | `execution`, `grader_judgment` |
+| `fw_task_verifications_total` | counter | `result` |
+| `fw_operator_interventions_total` | counter | `kind` |
+| `fw_operator_interventions_per_run` | histogram | `coverage` |
+| `fw_recovery_duration_seconds` | histogram | `result` |
+| `fw_confirmed_duplicate_effects_total` | counter | none |
+| `fw_ambiguous_tool_retries_total` | counter | none |
+| `fw_successful_task_cost_usd` | histogram | `basis` |
+| `fw_successful_task_cost_excluded_total` | counter | `reason` |
 | `fw_budget_exceeded_total` | counter | `agent`, `limit` (`maxTurns`, `maxTokens`, `maxCostUSD`, `maxToolCalls`, `deadline`, `maxRepeats`, `other`) |
 | `fw_model_requests_total` | counter | `provider`, `model`, `outcome` (`ok`, `error`, `canceled`) |
 | `fw_model_request_duration_seconds` | histogram | `provider`, `model` |
@@ -46,6 +55,34 @@ The route carries no authentication, because a scraper has no token. Keep it ins
 
 The table of section 10.1 of the kernel architecture lists `fw_runs_total` with `agent` and `outcome` alone. The code adds `batch`, the job of the run from the metadata `fw.batch`, so the code wins. `fw_model_cost_usd_total` counts priced tokens only. Set the prices per million tokens under `prices` in `fw.yaml`, with a price of zero for a local model, and the tokens of a model without a price go to `fw_model_unpriced_tokens_total`. The model latency histogram has buckets up to 900 seconds.
 
+## Task quality and recovery
+
+A run that completed is not a task that someone verified. Nine series of `telemetry/quality.go` keep execution, model grading, and trusted verification apart. They also count the actions of operators, the time of a recovery, duplicate effects, and the cost of a successful task. Their unit is a completion episode, the own work of a run up to one `fw.run.finished`. A follow-up starts another episode of the same run, and the copied history of a branch counts for nothing. The series also go out over OTLP, and their labels come from fixed lists only.
+
+| Metric | Type | Labels | What it counts |
+|---|---|---|---|
+| `fw_task_completions_total` | counter | `execution` (`completed`, `failed`, `canceled`), `grader_judgment` | Each completion episode, also a failed or canceled one. `grader_judgment` is the latest verdict of an outcome grader (`satisfied`, `needs_revision`, `max_iterations`, `unparsed`, `skipped`, `unknown`), or `unverified` without one |
+| `fw_task_verifications_total` | counter | `result` (`accepted`, `satisfied`, `rejected`, `unknown`) | Each final receipt of a trusted integration for a completed episode |
+| `fw_operator_interventions_total` | counter | `kind` (`decision`, `followup`, `budget_change`) | Each concrete action of an operator that the ledger records |
+| `fw_operator_interventions_per_run` | histogram | `coverage` (`complete`, `partial`) | The actions in each completion episode, zero included. `partial` means that the observer did not see the whole history of the run |
+| `fw_recovery_duration_seconds` | histogram | `result` (`progress`, `completed`, `failed`, `canceled`, `interrupted`) | The time from `fw.run.resumed` to the first model response, tool response, or tool progress, or to the end or the next stop of the run |
+| `fw_confirmed_duplicate_effects_total` | counter | none | The additional external effects that a trusted integration confirmed |
+| `fw_ambiguous_tool_retries_total` | counter | none | Each new request for a tool call id that is still open, such as a rerun after a resume |
+| `fw_successful_task_cost_usd` | histogram | `basis` (`accepted`, `satisfied`) | The own model cost of an episode with a final `accepted` or `satisfied` receipt and complete, priced usage |
+| `fw_successful_task_cost_excluded_total` | counter | `reason` (`missing_usage`, `unpriced_tokens`) | The `accepted` and `satisfied` receipts that the cost histogram leaves out |
+
+An intervention of the kind `decision` is an approval decision whose decider is neither the kernel nor the parent run. A decision on a run that the kernel started itself, such as a grader run, does not count. A `followup` is a user message from the origin `http`, `cli`, or `mcp`. A `budget_change` is a change of the budget by a named person from one of those origins. These are actions that the runtime recorded, not proof that a person sat at the keyboard.
+
+A recovery that a crash cut ends at the last event of the old attempt, so the time leaves out the downtime of the process. The histogram therefore does not measure the whole outage.
+
+### Receipts from an integration
+
+A trusted integration reports what it checked through `Agent.ObserveQuality` (`fw/quality.go`). The receipt `fw.QualityObservation` holds a stable `ID` of at most 128 bytes, a `Completion`, a `Verification`, and `DuplicateEffects`. `Completion` is the sequence number of an own `fw.run.finished` with the outcome `completed`. `accepted` means that a person accepted the result, and `satisfied` means that an external verifier checked it. A receipt with effects alone has no completion and no verification, and it can arrive at any time.
+
+The kernel records the receipt as `fw.run.annotated`, with a cost snapshot that it computes from the ledger. A retry with the same id and the same content writes nothing, also after a restart. A conflicting receipt, or a second final verification of one completion, is refused. The call needs the operator role on the run when the context carries a principal, and no model tool makes it. Send the receipt after the cost annotations of the episode, because the receipt freezes its cost snapshot.
+
+Model grading never counts as verification, and a retry never counts as a duplicate effect. A grader verdict of `satisfied` stays in the label `grader_judgment` of the completions. A repeated tool request goes to `fw_ambiguous_tool_retries_total`, because it proves another attempt, not another effect. Only a receipt raises `fw_task_verifications_total` and `fw_confirmed_duplicate_effects_total`. A completion without a receipt stays unverified, and a receipt of `unknown` is no success. See [the kernel architecture, section 10.1](../design/kernel-architecture.md#task-quality-and-recovery).
+
 ## The rule for labels
 
 No label holds a person, a run id, a prompt, a path, or a URL. Tests of the kernel feed a principal, a run id, and secret text into the events and make sure that no label holds them. A label holds a name that the configuration bounds, or a value from a fixed list:
@@ -57,7 +94,7 @@ No label holds a person, a run id, a prompt, a path, or a URL. Tests of the kern
 - `driver`: the bus and ledger drivers.
 - `batch`: the name of a job, which `enqueue` of the workbench sets. A run of no job has an empty value.
 
-`outcome`, `origin`, `limit`, `kind`, `decision`, `action`, `direction`, and `type` come from fixed lists. An origin or a limit that this version does not know becomes `other`.
+`outcome`, `origin`, `limit`, `kind`, `decision`, `action`, `direction`, and `type` come from fixed lists. So do the labels of the task-quality series: `execution`, `grader_judgment`, `result`, `coverage`, `basis`, and `reason`. An origin or a limit that this version does not know becomes `other`.
 
 ## The series of the front
 
@@ -117,10 +154,11 @@ The series of the front cover the fleet without a request to a Task, so an alert
 |---|---|
 | `prometheus.yml` | Two scrape jobs at 30 seconds. `fw` scrapes fixed addresses. `fw-pods` keeps the Kubernetes pods with the label `fw.dev/scrape: "true"` and the container port named `http`, and reads the annotation `fw.dev/metrics-path` for another path. |
 | `otel-collector.yaml` | An OpenTelemetry collector that receives OTLP on 4318 (HTTP) and 4317 (gRPC), serves the metrics of every pusher to Prometheus on port 9464 with `service.instance.id` as the label `instance` and an expiration of 15 minutes, and sends the logs and the traces to a log store and a trace store that you name. |
-| `alerts.yml` | Eight alert rules: `FwTargetDown`, `FwApprovalWaiting`, `FwRunFailuresRising`, `FwBudgetStops`, `FwLoops`, `FwMCPServerDown`, `FwModelErrorRate`, and `FwModelLatencyHigh`. The thresholds are starting points. |
-| `grafana/fw.json` | One dashboard for Grafana 10 or later. It reads the variable `Data source`, and `Agent` filters the panels with an agent label. |
+| `alerts.yml` | Fourteen alert rules in two groups. The group `fw-task-quality` holds `FwVerifiedCompletionRateLow`, `FwOperatorInterventionsHigh`, `FwRecoverySlow`, `FwConfirmedDuplicateEffects`, `FwSuccessfulTaskCostUnknown`, and `FwSuccessfulTaskCostHigh`. The group `fw` holds `FwTargetDown`, `FwApprovalWaiting`, `FwRunFailuresRising`, `FwBudgetStops`, `FwLoops`, `FwMCPServerDown`, `FwModelErrorRate`, and `FwModelLatencyHigh`. The thresholds are starting points. |
+| `grafana/fw.json` | One dashboard for Grafana 10 or later. It reads the variable `Data source`, and `Agent` filters the panels with an agent label. The row of task quality covers every agent and ignores `Agent`. Its seven panels show the verified completion ratio, the completions and the receipts, the interventions per episode, and the recovery p95 by result. They also show the confirmed duplicates beside the ambiguous retries, the own cost per successful task, and the cost coverage. |
+| `quality/main.go` | A receipt example that needs no model provider and no external service: `go run ./examples/observability/quality`. A faulty delivery tool commits two rows. The integration counts the rows and reports one `satisfied` completion with one confirmed duplicate effect, twice, and the metrics count it once. |
 
-Section 10.1 of the kernel architecture says that `alerts.yml` has ten rules. The file has eight, so the file wins. With the Prometheus Operator, copy the groups into a `PrometheusRule`. `promtool check config prometheus.yml` tests both files. The pods of `fw-front` in `examples/agentgateway` carry the label `fw.dev/scrape: "true"`, and the gateway does not route `/metrics`.
+The README of the directory has a section on the five task-quality measures, with the PromQL queries of each measure and the receipt API. `config_test.go` makes sure that the dashboard and the alert rules parse. With the Prometheus Operator, copy the groups into a `PrometheusRule`. `promtool check config prometheus.yml` tests both files. The pods of `fw-front` in `examples/agentgateway` carry the label `fw.dev/scrape: "true"`, and the gateway does not route `/metrics`.
 
 ## The lab checks
 
@@ -149,6 +187,8 @@ The Prometheus of the stack scrapes the collector, so the label of a pusher is `
 - `featherweight-kernel/docs/ARCHITECTURE.md` (section 10)
 - `featherweight-kernel/surface/metrics/metrics.go`
 - `featherweight-kernel/telemetry/metrics.go`
+- `featherweight-kernel/telemetry/quality.go`
+- `featherweight-kernel/fw/quality.go`
 - `featherweight-kernel/telemetry/otlp.go`
 - `featherweight-kernel/cli/doctor.go`
 - `featherweight-kernel/cmd/fw/driver_metrics.go`
@@ -158,6 +198,8 @@ The Prometheus of the stack scrapes the collector, so the label of a pusher is `
 - `featherweight-kernel/examples/observability/alerts.yml`
 - `featherweight-kernel/examples/observability/otel-collector.yaml`
 - `featherweight-kernel/examples/observability/grafana/fw.json`
+- `featherweight-kernel/examples/observability/quality/main.go`
+- `featherweight-kernel/examples/observability/config_test.go`
 - `featherweight-workbench/docs/ARCHITECTURE.md` (section 4.14)
 - `featherweight-workbench/fleet/metrics.go`
 - `featherweight-workbench/examples/agentgateway/README.md`

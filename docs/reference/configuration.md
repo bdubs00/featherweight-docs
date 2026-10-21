@@ -33,7 +33,8 @@ A key path maps to a variable in upper snake case: `bus.url` is `FW_BUS_URL`, an
 | `node` | The name of this process in every ledger event | `ax:<atespace>/<task>` under ax, else `<host>:<port>` |
 | `prices` | Per-million-token prices by selector: `{input, output}` | `{}` |
 | `surfaces` | The surfaces to serve | `[native, a2a, metrics]`, plus `mcp` in `fw-workbench` |
-| `maxRuns` | Runs in flight at once | `16`, or `1` under ax |
+| `maxRuns` | Root runs that work at once. `FW_MAX_RUNS` | `16`, or `1` under ax |
+| `maxQueuedRuns` | Root runs that the process admits beyond `maxRuns`, which wait for a working slot. `0` takes the default. A child run takes no place here: the `spawn` limits bound it. A full backlog gives 429. `FW_MAX_QUEUED_RUNS` | `0`, which is `64` |
 
 ## tls
 
@@ -100,9 +101,9 @@ The OpenAI adapter reads nine options: `reasoning`, `maxTokensField`, `authHeade
 |---|---|---|
 | `secrets.driver` | `env`, `vault`, or `gsm` | `env` |
 | `secrets.options` | Driver options. `FW_SECRETS_OPTIONS_<NAME>` | `{}` |
-| `ledger.driver` | `file`, `nats`, `redis`, or `sqlite` | `file` |
+| `ledger.driver` | `file` or `mem`. One writer process owns a file root | `file` |
 | `ledger.path` | `file`: the directory | `<home>/runs` |
-| `ledger.url` | `nats` and `redis`: the server | `""` |
+| `ledger.url` | The server of a ledger driver that a program registers. The drivers `file` and `mem` do not read it | `""` |
 | `ledger.options` | Driver options. `FW_LEDGER_OPTIONS_<NAME>` | `{}` |
 | `bus.driver` | `mem`, `nats`, `redis`, or `kafka` | `mem` |
 | `bus.url` | `nats://nats:4222`, `redis://redis:6379`, or `kafka://broker:9092` | `""` |
@@ -120,7 +121,7 @@ The OpenAI adapter reads nine options: `reasoning`, `maxTokensField`, `authHeade
 
 | Key | Meaning | Default |
 |---|---|---|
-| `builtin` | The built-in tools the model can call. The workbench adds `propose_agent` | `[bash, files, http, memory, skill, clock, ask_user, spawn_task, await_task]` |
+| `builtin` | The built-in tools the model can call. The workbench adds `propose_agent` | `[bash, files, http, memory, recall, skill, clock, ask_user, spawn_task, await_task]` |
 | `user` | The user of `bash` and of the stdio MCP servers: a name or uid, with `:group`. `none` is the user of `fw` | `""`: `65532` under ax as root, else the user of `fw` |
 | `files.root` | The directory that the `files` tool cannot leave | the working directory, `/workspace` under ax |
 | `files.deny` | Patterns that are never read or written | `[.env, .env.*, *.pem, *.key, .netrc, **/.git/config]` |
@@ -130,7 +131,7 @@ The OpenAI adapter reads nine options: `reasoning`, `maxTokensField`, `authHeade
 | `http.allow` | URL globs the `http` tool can fetch | `[]` |
 | `bash.env` | Variables that every command starts with. `FW_TOOLS_BASH_ENV_<NAME>` | `{}` |
 | `bash.timeout` | One command. `0` leaves the limit to `tools.limits` | `0s` |
-| `memory.scope` | `agent`: notes per profile. `shared`: one set | `agent` |
+| `memory.scope` | The scope of the tools `memory` and `recall`. `agent`: notes per profile under `<home>/memory/agents/<agent>`. `principal`: notes per person and profile under `<home>/memory/principals/<agent>/<hash>`. `shared`: one set under `<home>/memory/shared` | `agent` |
 | `limits.maxInputBytes` | A larger input does not run | `262144` |
 | `limits.maxOutputBytes` | A larger result keeps its head and tail | `102400` |
 | `limits.timeout` | One tool call | `10m` |
@@ -322,7 +323,7 @@ A list of event sources. No variable sets it. See [section 13.2](../design/workb
 
 ## Where the example and the code differ
 
-`examples/fw.yaml` says that it shows each key with its default, and the loader of the configuration reads it. Some values in it are samples: `tools.files.root: /workspace`, `tools.http.allow`, `access.admins: ["local:*"]`, `models.fast`, `auth.oidc.issuer`, `auth.spiffe.trustDomain`, the `tools.mcp` and `tools.peers` entries, and the profile `reviewer`. The tables above give the defaults of `fw.DefaultConfig` for those keys.
+`examples/fw.yaml` labels `ledger.url` as the server of `nats` and `redis`, but no ledger driver of that name exists, so the code wins. `examples/fw.yaml` says that it shows each key with its default, and the loader of the configuration reads it. Some values in it are samples: `tools.files.root: /workspace`, `tools.http.allow`, `access.admins: ["local:*"]`, `models.fast`, `auth.oidc.issuer`, `auth.spiffe.trustDomain`, the `tools.mcp` and `tools.peers` entries, and the profile `reviewer`. The tables above give the defaults of `fw.DefaultConfig` for those keys.
 
 ## Sources
 
@@ -337,6 +338,10 @@ A list of event sources. No variable sets it. See [section 13.2](../design/workb
 - `featherweight-kernel/fw/external.go`
 - `featherweight-kernel/fw/workspace.go`
 - `featherweight-kernel/fw/clock.go`
+- `featherweight-kernel/fw/ledger_file.go`
+- `featherweight-kernel/fw/mem.go`
+- `featherweight-kernel/fw/lifecycle.go`
+- `featherweight-kernel/memory/store.go`
 - `featherweight-kernel/ax/config.go`
 - `featherweight-kernel/env/config.go`
 - `featherweight-kernel/harness/harness.go`

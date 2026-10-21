@@ -120,11 +120,23 @@ expect:
 | `expect.events` | Event types that appear in the ledger. |
 | `expect.maxTurns` | The most turns. |
 
-Ask the model for a fixed word in its answer, such as `PINEAPPLE` or `PRODUCT=1591`, and check for that word. A fixed word is a stable check for a small model, and a check on free text is not. The eight scenarios of the lab cover a plain answer, `bash`, `files`, `memory`, `spawn_task`, and a skill. Two more cover an approval that is allowed and one that is denied.
+Ask the model for a fixed word in its answer, such as `PINEAPPLE` or `PRODUCT=1591`, and check for that word. A fixed word is a stable check for a small model, and a check on free text is not. The nine scenarios of the lab cover a plain answer, `bash`, `files`, `memory`, `spawn_task`, a skill, and `recall`. Two more cover an approval that is allowed and one that is denied.
+
+Two scenarios test the memory, and their order matters. `04-memory` saves the note `/memories/e2e-color.md` with the tool `memory`, and it expects the event `fw.memory.changed` in the ledger. `09-recall` runs later: it finds that note with the tool `recall`, reads it by its ref, and expects the word `TEAL`. `e2e/fw.yaml` names `recall` in `tools.builtin`, so the tool exists in both loops.
 
 ## The tests
 
 `TestSurfaces` checks that each surface answers: `/healthz`, `/readyz`, the A2A agent card, `GET /v1/tools`, `GET /v1/skills`, and `/metrics`. With `FW_E2E_MCP=1` it also sends an MCP `tools/list`. Only fw-workbench serves MCP, and both loops test the kernel, so the loops leave it off.
+
+`TestMemory` (`e2e/memory_test.go`) runs after the scenarios and checks the memory of the default agent over the native API:
+
+1. `GET /v1/memory/notes` answers with the scope `agent`.
+2. A `PUT /v1/memory/notes/e2e-api.md` from the token of the loops answers 403, because an operator cannot write a note of the scope `agent`.
+3. `GET /v1/memory` with `kinds=file` answers 400.
+4. A search for `TEAL` finds `mem://agent/default/e2e-color.md`, and a read of the note gives its text and a hash of 64 hex digits.
+5. A new run carries the note index in the field `context` of `fw.run.started`, as a `<context source="memory">` block. The field `brief`, the text of the system prompt, holds the section `# Memory` and no note.
+
+Without the note of `04-memory`, the checks of the search and the run skip. See [Context, memory, and time](../concepts/context-memory-time.md#memory).
 
 `TestScenarios` runs the scenarios one at a time, because a local model server takes few requests at once. For each scenario it starts a run with `POST /v1/runs` and polls `GET /v1/runs/{id}`. No request is held open for the whole run, so a port-forward or a router between the test and `fw` does not cut it. When the run reaches `input-required` with a pending approval, the test answers with `POST /v1/runs/{id}/approvals/{approval}` and the `approve` value. At the end it reads the ledger with `GET /v1/runs/{id}/events` and checks the expectation.
 
@@ -200,8 +212,9 @@ The repository `https://github.com/bdubs00/featherweight-lab` is private, so the
 - `featherweight-lab/e2e/k3s/install.sh`
 - `featherweight-lab/e2e/k3s/task.yaml`
 - `featherweight-lab/e2e/k3s/egress.yaml`
-- `featherweight-lab/e2e/scenarios/01-plain.yaml` through `08-approval-deny.yaml`
+- `featherweight-lab/e2e/scenarios/01-plain.yaml` through `09-recall.yaml`
 - `featherweight-lab/e2e/e2e_test.go`
+- `featherweight-lab/e2e/memory_test.go`
 - `featherweight-lab/e2e/fleet/verify.py`
 - `featherweight-lab/e2e/fleet/verify-workbench.py`
 - `featherweight-lab/e2e/fleet/verify-oidc.py`

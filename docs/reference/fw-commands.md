@@ -63,6 +63,8 @@ The words of the input are joined with spaces. An input of `-` reads standard in
 
 If the run stops at a budget limit, the verb names the limit and the flag or key that raises it. The exit code follows the state of the run.
 
+The verb opens the configured ledger as its writer. One process owns a file ledger at a time, so `fw run` beside a running `fw serve` with the same home fails with `fw: file ledger: another writer owns this root`. Give the second process another home with `-home`.
+
 ## fw serve
 
 Serves every enabled surface on one listener. Under ax, or with `-task-file` or `-workspace-file`, the verb runs the ax boot sequence of [section 11.3](../design/kernel-architecture.md#113-boot-sequence-under-ax) instead: it listens at once with a boot handler, prepares the workspaces, loads the configuration, resumes unfinished runs, and then swaps in the agent.
@@ -98,11 +100,11 @@ Writes a starter `fw.yaml`, `prompts/default.md`, and the directories `agents` a
 fw init [<dir>]
 ```
 
-The verb has no flags of its own. The directory is `.` by default.
+The verb has no flags of its own. The directory is `.` by default. The starter `fw.yaml` names the model `anthropic/claude-opus-5-5`, the effort `high`, and the built-in tools `bash`, `files`, `http`, `memory`, `recall`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`.
 
 ## fw doctor
 
-Checks the installation, one line per check. The checks cover the configuration, the home, the tool user, the time zone, the authentication, TLS, the access rules, and the control plane. They also cover the credential, the model, the tool sources, the token broker, the telemetry, the bus, the ledger, and the skills. Inside an ax Task, `cli/doctor_ax.go` adds the lines `ax reach`, `ax trust bundle`, `ax tools user`, and `ax durable`. Outside ax, one line says that they do not apply.
+Checks the installation, one line per check. The checks cover the configuration, the home, the tool user, the time zone, the authentication, TLS, the access rules, and the control plane. They also cover the credential, the model, the tool sources, the token broker, the telemetry, the bus, the ledger, the skills, and the memory. Inside an ax Task, `cli/doctor_ax.go` adds the lines `ax reach`, `ax trust bundle`, `ax tools user`, and `ax durable`. Outside ax, one line says that they do not apply.
 
 ```sh
 fw doctor [flags]
@@ -111,6 +113,14 @@ fw doctor [flags]
 | Flag | Meaning | Default |
 |---|---|---|
 | `-timeout limit` | The limit of each check that reaches a provider or a server | `10s` |
+
+The memory check is the last line. It names the scope, the index of this build, and the count of the notes of the profile `default`:
+
+```
+ok    memory: scope agent, index scan, 3 notes of the profile default
+```
+
+The index is `scan`, or `sqlite-fts5` in a build with the tag `memory_sqlite`. If the store does not open or cannot list its notes, the line reads `FAIL  memory:` with the error. The ledger check writes into `<root>/.doctor`, a directory of its own, so it runs beside a server.
 
 If any check fails, the exit code is `1`.
 
@@ -167,7 +177,7 @@ fw skills [flags] [<name>]
 
 ## fw events
 
-Prints the events of a run from the configured ledger. The verb opens the ledger without a kernel, so it never resumes a run.
+Prints the events of a run from the configured ledger. The verb opens the ledger without a kernel, so it never resumes a run. It opens a file ledger read-only, without the writer lock, so it reads beside a running server (`fw.OpenFileLedgerReadOnly`). A read-only open never repairs or creates a file. Another ledger driver opens as the driver defines.
 
 ```sh
 fw events [flags] <run-id>
@@ -195,7 +205,9 @@ fw replay [flags] <run-id>
 | `-ledger dir` | The root directory of the file ledger that holds the run | the configured ledger |
 | `-json` | Print the new run as JSON instead of the output | off |
 
-The design document writes `fw replay <ledger>`. The code takes a run id, and `-ledger` names another ledger directory.
+`-ledger` opens that directory read-only, so the source can be the ledger of a running server. The new run goes to the configured ledger of the replay, which needs its writer lock. To replay a run of a live server, give the replay another home with `-home`, and name the ledger of the server with `-ledger`.
+
+The design document, section 4.6, still writes `fw replay <ledger>`. The code takes a run id, and `-ledger` names another ledger directory, so the code wins.
 
 ## fw card
 
@@ -340,6 +352,9 @@ There is no `fw fork` verb. A branch of a run comes from `POST /v1/runs/{id}/for
 - `featherweight-kernel/cmd/fw/driver_a2a.go`
 - `featherweight-kernel/config/config.go`
 - `featherweight-kernel/fw/agent.go`
+- `featherweight-kernel/fw/ledger_file.go`
+- `featherweight-kernel/memory/index_scan.go`
+- `featherweight-kernel/memory/index_fts.go`
 - `featherweight-kernel/ax/config.go`
 - `featherweight-kernel/surface/axmeta/axmeta.go`
 - `featherweight-kernel/README.md`

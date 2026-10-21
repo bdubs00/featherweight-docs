@@ -171,7 +171,7 @@ Take the `id` from the run object and follow its ledger:
 ./bin/fw events <id> --follow
 ```
 
-`fw events` opens the ledger directly, without a kernel, so it never resumes a run. `--follow` keeps printing until the run finishes. `--format text` prints one short line per event with its time instead of the JSON of the event. `--from <n>` starts at a sequence number. The same events arrive as server-sent events on `GET /v1/runs/{id}/events`.
+`fw events` opens the ledger directly, without a kernel, so it never resumes a run. It opens a file ledger read-only, so it works while `fw serve` owns the ledger. `--follow` keeps printing until the run finishes. `--format text` prints one short line per event with its time instead of the JSON of the event. `--from <n>` starts at a sequence number. The same events arrive as server-sent events on `GET /v1/runs/{id}/events`.
 
 ### How an approval looks over the API
 
@@ -201,7 +201,8 @@ The home directory holds everything the process keeps. Without a setting, it is 
 | `runs/index.jsonl` | the list of run ids |
 | `agents/<name>.yaml` | one profile per file, beside the profiles in `fw.yaml` |
 | `skills/<name>/SKILL.md` | the skills, unless `tools.skills` names other directories |
-| `memory/agents/<profile>/` | the notes of the `memory` tool, or `memory/shared/` with `tools.memory.scope: shared` |
+| `memory/agents/<profile>/` | the notes of the `memory` tool, or `memory/principals/<profile>/<hash>/` with `tools.memory.scope: principal`, or `memory/shared/` with `shared` |
+| `memory/index/` | the derived search index of a build with the tag `memory_sqlite` |
 | `prompts/default.md` | the system prompt that the starter profile names, written by `fw init` |
 
 The `files` tool and the `bash` tool never open the home directory, the ledger directory, or the configuration file.
@@ -224,6 +225,7 @@ The `files` tool and the `bash` tool never open the home directory, the ledger d
 - `featherweight-kernel/go.mod`
 - `featherweight-kernel/cli/cli.go`
 - `featherweight-kernel/cli/setup.go`
+- `featherweight-kernel/memory/store.go`
 - `featherweight-kernel/cli/run.go`
 - `featherweight-kernel/cli/doctor.go`
 - `featherweight-kernel/cli/serve.go`

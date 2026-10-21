@@ -1,6 +1,6 @@
 # Safeguards
 
-A run spends money, calls tools, and changes files. The kernel bounds all three. This page names each safeguard and its default: the budget, the loop guard, the tool limits, the policy, the external decision point, approvals, and the redaction of secrets.
+A run spends money, calls tools, and changes files. The kernel bounds all three. This page names each safeguard and its default: the budget, admission, the loop guard, the tool limits, the policy, the external decision point, approvals, and the redaction of secrets.
 
 ## The budget
 
@@ -59,6 +59,10 @@ A run and every run under it are the tree of the run. The limits hold in three w
 The children of a run share what it has left. No child gets a grant up front, so children that work at the same time draw on one pool. A child also gets the budget of its parent as a cap on its own limits (`Budget.Cap`). A child alone therefore never outgrows its parent. A child whose parent turns the final report off gets no report either.
 
 When a tree reaches a limit, the run that sees it first appends `fw.budget.exceeded`. The event carries the scope `tree` and the run whose budget holds the limit. That run finishes as `failed`. The kernel then cancels every open run under that run, at any depth, in this process and in other processes. A new child in a tree with nothing left is refused (`fw.ErrTreeBudget`), and `spawn_task` tells the model which limit ran out. The check is live, not a reservation. Each run that works at the same time can therefore pass a limit by one model call and the tool calls of one response.
+
+## Admission
+
+The budget bounds one run. Admission bounds the number of root runs that one process takes on. `maxRuns` bounds the root runs that work at the same time, and `maxQueuedRuns`, 64 by default, bounds the root runs that wait behind them. When both are full, a new start gets `fw.ErrSaturated`, and the native API answers 429 with `Retry-After`. A child run takes no root place, because `spawn.maxRunning` and the budget of its tree bound it. See [The run lifecycle](../concepts/run-lifecycle.md#admission).
 
 ## The loop guard
 
@@ -148,6 +152,7 @@ A value of fewer than eight characters is not replaced. The raw provider blocks 
 - `featherweight-kernel/fw/run.go`
 - `featherweight-kernel/fw/budget.go`
 - `featherweight-kernel/fw/config.go`
+- `featherweight-kernel/fw/lifecycle.go`
 - `featherweight-kernel/fw/turn.go`
 - `featherweight-kernel/fw/kernel.go`
 - `featherweight-kernel/fw/limits.go`
