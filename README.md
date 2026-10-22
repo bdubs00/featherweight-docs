@@ -1,6 +1,6 @@
 # featherweight-docs
 
-The documentation site of Featherweight: the kernel, the workbench, and the lab. The site is built with [MkDocs](https://www.mkdocs.org/) and the [Material](https://squidfunk.github.io/mkdocs-material/) theme from the Markdown files under `docs/`.
+The documentation site of Featherweight: the kernel and the workbench. The site is built with [MkDocs](https://www.mkdocs.org/) and the [Material](https://squidfunk.github.io/mkdocs-material/) theme from the Markdown files under `docs/`.
 
 ## Build and serve
 
@@ -11,7 +11,7 @@ make serve    # http://127.0.0.1:8000, rebuilds on change
 make build    # writes the site into site/
 ```
 
-Both targets run `./sync.sh` first. The script copies the design documents of the three repositories into `docs/design/` and rewrites their relative links. The repositories must sit next to this one: `../featherweight-kernel`, `../featherweight-workbench`, `../featherweight-lab`. The variables `KERNEL_DIR` and `WORKBENCH_DIR` point the script elsewhere.
+Both targets run `./sync.sh` first. The script copies the design documents of the two repositories into `docs/design/` and rewrites their relative links. The repositories must sit next to this one: `../featherweight-kernel` and `../featherweight-workbench`. The variables `KERNEL_DIR` and `WORKBENCH_DIR` point the script elsewhere.
 
 ## Layout
 
@@ -23,7 +23,7 @@ Both targets run `./sync.sh` first. The script copies the design documents of th
 | `docs/getting-started/` | Walk-throughs for one machine and for Claude Code. |
 | `docs/reference/` | Every verb, flag, configuration key, route, and MCP tool. |
 | `docs/deployment/` | Images, one Task on AX, a fleet, observability. |
-| `docs/operations/` | The homelab cluster, the tests, debugging, platform gaps. |
+| `docs/operations/` | Debugging a Task, platform gaps and patches. |
 | `docs/design/` | Copies of the design documents, made by `sync.sh`. Do not edit them here. |
 | `docs/glossary.md` | The terms of the project. |
 | `STYLE.md` | The writing rules of every page. |

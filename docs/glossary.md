@@ -1,6 +1,6 @@
 # Glossary
 
-The terms of Featherweight, in alphabetical order. Each entry links to the page of this site that covers it. The definitions follow the code and the design documents of the three repositories.
+The terms of Featherweight, in alphabetical order. Each entry links to the page of this site that covers it. The definitions follow the code and the design documents of the two repositories.
 
 ## A
 
@@ -10,7 +10,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **admission**: the bound on the root runs that one process takes on: `maxRuns` that work and `maxQueuedRuns` that wait, 64 by default. A full process answers a new start or a branch with 429 and `Retry-After`, and never refuses a follow-up or a decision. See [The run lifecycle](concepts/run-lifecycle.md#admission).
 
-**agentgateway**: the gateway that the lab puts in front of the front, so that one URL serves `/mcp`, `/ui`, and `/v1`. In the lab it cuts a call after ten seconds. See [A fleet](deployment/fleet.md) and [The homelab cluster](operations/homelab.md).
+**agentgateway**: an optional gateway in front of the front, so that one URL serves `/mcp`, `/ui`, and `/v1`. It cuts a call after ten seconds. See [A fleet](deployment/fleet.md).
 
 **approval**: a hold on a tool call that the policy marks `ask`. The run waits in the state `input-required` until a person allows or denies the call. See [Safeguards](concepts/safeguards.md).
 
@@ -44,7 +44,7 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 
 **connection**: the link between a person and a service at which an agent acts for that person, made by an OAuth sign-in. A run that needs one waits until the person connects. See [Identity](concepts/identity.md).
 
-**credential injection**: a rule of the egress policy of an actor. It makes the egress gateway replace a request header with a secret, such as a model key, so the real key never enters the sandbox. See [The homelab cluster](operations/homelab.md).
+**credential injection**: a rule of the egress policy of an actor. It makes the egress gateway replace a request header with a secret, such as a model key, so the real key never enters the sandbox. See [One Task on AX](deployment/one-task-on-ax.md).
 
 ## D
 
@@ -161,8 +161,6 @@ The terms of Featherweight, in alphabetical order. Each entry links to the page 
 **spawn**: the tool `spawn_task`, which starts a child run with fewer rights than its parent. With `spawn.driver: ax`, each child gets a Task of its own. See [Safeguards](concepts/safeguards.md) and [section 11.9 of the kernel architecture](design/kernel-architecture.md#119-child-runs-and-child-tasks).
 
 **SPIFFE**: the workload identity standard. The mode `spiffe` makes a JWT-SVID or an X.509-SVID a principal of the kind `workload`. See [Identity](concepts/identity.md).
-
-**Strata**: the local model server of the lab, on the workstation. The fleet reaches it through a reverse tunnel and the proxy `ax-model`. It serves one request at a time and costs nothing. See [The homelab cluster](operations/homelab.md).
 
 **Substrate**: Agent Substrate, the platform that runs actors in gVisor sandboxes. Each actor has a `/workspace` that survives suspend and resume, and sits behind the atenet router and an egress gateway. See [The four layers](concepts/layers.md).
 

@@ -2,7 +2,7 @@
 
 This page tells how to run one kernel as one AX Task without a front. You write a Workspace and a Task, apply them with `ax`, resume the Task, and send it work through the atenet router. The page also covers the `fw ax` verbs, which do the same in one command, and the tools that look inside a Task.
 
-You need a cluster with Agent Substrate and AX, the `ax` command, `kubectl`, and an image of `fw` by digest in a registry that the cluster reaches. See [Build and images](images.md) for the image and [The homelab cluster](../operations/homelab.md) for the cluster of the lab.
+You need a cluster with Agent Substrate and AX, the `ax` command, `kubectl`, and an image of `fw` by digest in a registry that the cluster reaches. See [Build and images](images.md) for the image.
 
 ## What ax gives a Task
 
@@ -12,13 +12,13 @@ Three facts of the platform shape every step below:
 
 - ax creates every Task suspended. A resume starts it.
 - The atenet router, `atenet-router.ate-system.svc.cluster.local`, is the only door into a Task. A request through it wakes a sleeping Task.
-- Substrate denies every outbound connection of an actor that has no egress policy. The lab runs a patched AX that creates the policy from `spec.egress` before the first run. A stock AX needs the policy from `kubectl-ate`. See [Platform gaps and patches](../operations/platform-gaps.md).
+- Substrate denies every outbound connection of an actor that has no egress policy. The patched AX of the fork `github.com/bdubs00/ax` creates the policy from `spec.egress` before the first run. A stock AX needs the policy from `kubectl-ate`. See [Platform gaps and patches](../operations/platform-gaps.md).
 
 ## The Workspace manifest
 
 A Workspace is the durable content of a Task. `spec.files` writes inline files under the workspace path. `fw` reads its configuration from `/workspace/.fw/fw.yaml`, because `FW_HOME` is `/workspace/.fw` under ax, and it reads profile files from `.fw/agents/*.yaml`. A Workspace can also clone `spec.git` repositories, create `spec.skills.path`, and name `spec.mcp.servers`, which join `tools.mcp` of the configuration. `fw` skips `spec.mcp.registries` and `spec.skills.registries` with a warning.
 
-This Workspace comes from `e2e/fleet/ax/hello.yaml` of the lab. It names a local model behind the proxy `ax-model` and gives the agent a child Task for each `spawn_task`:
+This Workspace names an OpenAI-compatible model behind a proxy Service `ax-model` and gives the agent a child Task for each `spawn_task`:
 
 ```yaml
 apiVersion: ax.io/v1alpha1
@@ -64,7 +64,7 @@ spec:
   image: "<registry>/featherweight-kernel@sha256:<digest>"
   env:
     - name: OPENAI_API_KEY
-      value: strata-needs-no-key      # the local model takes no key
+      value: the-proxy-holds-the-key  # a placeholder, because the proxy puts the key in
     - name: FW_API_TOKEN
       value: "<token>"                # the bearer token of the native API
   workspaces:
@@ -87,17 +87,16 @@ spec:
 | `spec.debug` | `true` turns on the guest services of `ax ssh`. See the warning below. |
 | `spec.resources` | `requests` and `limits`, each with `cpu` and `memory`. |
 
-The three rules of the example allow what this agent dials: the model proxy, the ax API server for `spawn_task`, and the router, through which the parent reaches its children. Add one rule for each other endpoint of the configuration: the bus, the token broker, an OTLP collector, and each MCP server. An `https` rule needs the trust bundle of the egress gateway, which ax does not mount in a Task yet, so write `http` and `tls` rules. A rule names a DNS name, never an IP address, and Substrate accepts only local names in the `Host` header. That is why the lab reaches its model through a proxy Service in the cluster.
+The three rules of the example allow what this agent dials: the model proxy, the ax API server for `spawn_task`, and the router, through which the parent reaches its children. Add one rule for each other endpoint of the configuration: the bus, the token broker, an OTLP collector, and each MCP server. An `https` rule needs the trust bundle of the egress gateway, which ax does not mount in a Task yet, so write `http` and `tls` rules. A rule names a DNS name, never an IP address, and Substrate accepts only local names in the `Host` header. That is why the example reaches its model through a proxy Service in the cluster.
 
 ## Apply and resume
 
-Render the manifest with the image and a token, apply it, and resume the Task:
+Save both manifests in one file `hello.yaml`, with `$IMAGE` and `$TOKEN` in place of the image and the token. Render the file, apply it, and resume the Task:
 
 ```sh
-export KUBECONFIG=~/.kube/k3s.yaml
-export IMAGE="$(kubectl -n fw-fleet get cm ready -o jsonpath='{.data.imageWorker}')"
+export IMAGE="<registry>/featherweight-kernel@sha256:<digest>"
 export TOKEN="$(head -c 24 /dev/urandom | base64 | tr -d '/+=')"
-envsubst '$IMAGE $TOKEN' <e2e/fleet/ax/hello.yaml | ax -a default apply -f -
+envsubst '$IMAGE $TOKEN' <hello.yaml | ax -a default apply -f -
 ax -a default resume task fw-hello
 ax -a default describe task fw-hello
 ```
@@ -109,7 +108,7 @@ kubectl-ate get actors fw-hello -a default
 kubectl-ate create egress-policy fw-hello -a default -f egress.yaml
 ```
 
-`e2e/k3s/egress.yaml` of the lab is such a file. Its one rule allows HTTP to the model Service and tells the gateway to replace the `Authorization` header with a key from a Kubernetes Secret, so the Task holds a placeholder and never the key. The actor boots before the policy takes effect, and `fw` stops when it cannot reach its bus at the start. The scripts of the lab resume a Task that crashed at boot. `fw ax up` does the same.
+Such a file holds the rules and their effects. One rule can allow HTTP to the model Service and tell the gateway to replace the `Authorization` header with a key from a Kubernetes Secret. The Task then holds a placeholder and never the key. The actor boots before the policy takes effect. If `fw` cannot reach its bus at the start, it stops. `fw ax up` resumes a Task that crashed at boot, up to three times.
 
 ## Reach the Task through the router
 
@@ -154,7 +153,7 @@ A suspend pauses the sandbox, saves `/workspace`, and kills `fw` with `SIGKILL`.
 
 ## The fw ax verbs
 
-`fw ax` takes one profile file and does the steps above in one command. The profile file is a fragment of `fw.yaml`, such as `policy`, `access`, and `agents`, in the shape of `e2e/fleet/ax/profiles/*.yaml` of the lab. `render` starts from the configuration of the caller, reduced to `model`, `models`, `effort`, `providers`, `bus`, `tokens`, and `tools.mcp`, lays the profile file on top, and derives one egress rule for each endpoint. See [the kernel architecture, section 21](../design/kernel-architecture.md#21-fw-ax-and-the-doctor-in-a-task).
+`fw ax` takes one profile file and does the steps above in one command. The profile file is a fragment of `fw.yaml`, such as `policy`, `access`, and `agents`. `render` starts from the configuration of the caller, reduced to `model`, `models`, `effort`, `providers`, `bus`, `tokens`, and `tools.mcp`, lays the profile file on top, and derives one egress rule for each endpoint. See [the kernel architecture, section 21](../design/kernel-architecture.md#21-fw-ax-and-the-doctor-in-a-task).
 
 | Verb | Does | Flags |
 |---|---|---|
@@ -228,10 +227,4 @@ Without `AX_TASK_YAML`, as under `ax ssh`, the lines read the manifests from the
 - `featherweight-kernel/surface/axmeta/axmeta.go`
 - `featherweight-kernel/examples/ax/reviewer.yaml`
 - `featherweight-kernel/examples/fw.yaml`
-- `featherweight-lab/e2e/fleet/ax/hello.yaml`
-- `featherweight-lab/e2e/fleet/ax/task.yaml`
-- `featherweight-lab/e2e/fleet/ax/run.sh`
-- `featherweight-lab/e2e/k3s/task.yaml`
-- `featherweight-lab/e2e/k3s/egress.yaml`
-- `featherweight-lab/e2e/k3s/run.sh`
-- `featherweight-lab/e2e/k3s/ax-task-egress.comment.md`
+- `ax` (the fork, branch `feat/task-egress-policy`)

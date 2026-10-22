@@ -2,13 +2,11 @@
 
 The main path into Featherweight is an MCP client that talks to the front. The front is `fw-workbench` outside the sandboxes, and a fleet is the set of workers behind it, one `fw` per AX Task. Claude Code reaches the front as one MCP server and sees every worker through it. This page says how the server is reached, lists its tools, and walks through the work of one person: a run, an approval, a job, a connection, a branch, and a new agent.
 
-The call shapes below come from the end-to-end scripts of the lab, which do these steps over MCP against the homelab fleet.
-
 ## How Claude Code reaches the front
 
 The MCP server of the front listens at `/mcp` over Streamable HTTP. A request with the header `Mcp-Protocol-Version` of `2026-07-28` or later is served without a session. Every other request opens a session of the 2025-11-25 revision with `Mcp-Session-Id`. Both answer the same tools.
 
-In the lab, agentgateway puts the front behind one URL, `http://192.168.50.60:8090`. It routes `/mcp` through an MCP backend with a login policy, and `/ui` and `/v1` as plain HTTP. Add the server to Claude Code with its URL:
+With agentgateway, one URL serves the front. The gateway routes `/mcp` through an MCP backend with a login policy, and `/ui` and `/v1` as plain HTTP. Add the server to Claude Code with its URL:
 
 ```sh
 claude mcp add --transport http fw-fleet https://fleet.example.com/mcp
@@ -84,7 +82,7 @@ A question from the tool `ask_user` is an approval with a schema. Answer it with
 Call `enqueue` with a profile and one item per run:
 
 ```json
-{"agent": "reviewer", "batch": "lab-20261020-1200",
+{"agent": "reviewer", "batch": "reviews-20261020-1200",
  "items": [{"input": "Review pull request 41.", "title": "piece 1"},
            {"input": "Review pull request 42.", "title": "piece 2"}]}
 ```
@@ -131,7 +129,7 @@ A new profile gets you as its owner. With pools, the profile goes to the pool wh
 - `wait` false makes `run` return the run object at once. Poll `run_status`, or read the resource `fw://runs/{id}`. The resources read the runs of the front itself only, and the tools reach every member.
 - `requestId` is an idempotency key. A retried `run` with the same `requestId` returns the same run instead of a second one.
 - If the connection closes, the `run` call ends but the run continues. Read it again with `run_status`. Only `cancel` stops a run.
-- A gateway bounds a call. In the lab, agentgateway cuts a call after ten seconds, so a long run must not be held open through it. Start it with `wait` false, or with `member`, and read it later. `fork` with `spawn` answers at once for the same reason, and `enqueue` never waits.
+- A gateway bounds a call. agentgateway cuts a call after ten seconds, so a long run must not be held open through it. Start it with `wait` false, or with `member`, and read it later. `fork` with `spawn` answers at once for the same reason, and `enqueue` never waits.
 
 ## Next steps
 
@@ -139,7 +137,7 @@ A new profile gets you as its owner. With pools, the profile goes to the pool wh
 - [The fleet](../concepts/fleet.md) explains members, jobs, pools, and the suspend of an idle Task.
 - [Identity](../concepts/identity.md) explains principals, roles, and connections.
 - [Safeguards](../concepts/safeguards.md) explains the policy and the budget behind an approval.
-- [A fleet](../deployment/fleet.md) deploys the front and the workers, and [The homelab cluster](../operations/homelab.md) describes the lab behind the examples.
+- [A fleet](../deployment/fleet.md) deploys the front and the workers.
 - The design of the server is in [section 3 of the workbench architecture](../design/workbench-architecture.md#3-mcp-server-work-intake), with [the approvals](../design/workbench-architecture.md#33-approvals-over-mcp), [the connections](../design/workbench-architecture.md#34-connections-over-mcp), and [the disconnects](../design/workbench-architecture.md#35-cancellation-and-disconnects).
 
 ## Sources
@@ -155,8 +153,3 @@ A new profile gets you as its owner. With pools, the profile goes to the pool wh
 - `featherweight-workbench/surface/mcp/resources.go`
 - `featherweight-workbench/docs/ARCHITECTURE.md`, sections 3, 4.5, 4.9, 6.1, and 14.9
 - `featherweight-workbench/examples/agentgateway/README.md`
-- `featherweight-lab/e2e/fleet/batch.py`
-- `featherweight-lab/e2e/fleet/connect.py`
-- `featherweight-lab/e2e/fleet/fork.py`
-- `featherweight-lab/e2e/fleet/deploy.sh`
-- `featherweight-lab/e2e/README.md`

@@ -2,14 +2,13 @@
 
 Featherweight runs agents as durable, sandboxed workers on Google AX and Agent Substrate. An agent runs inside one sandbox, keeps an append-only record of everything it does, sleeps at no cost while it waits for a person, and wakes up where it left off. A person drives a whole fleet of such agents from Claude Code, an IDE, or a browser.
 
-The project is three repositories and one patched platform:
+The project is two repositories and one patched platform:
 
 | Repository | Binary | What it is |
 |---|---|---|
 | [featherweight-kernel](https://github.com/bdubs00/featherweight-kernel) | `fw` | One agent inside one AX Task. The run loop, the budget, the policy, the ledger. |
 | [featherweight-workbench](https://github.com/bdubs00/featherweight-workbench) | `fw-workbench` | The front for people, outside the sandboxes. The web page, the sign-in, the MCP server, the fleet view, the connections, the pools. |
-| featherweight-lab (private) | none | The end-to-end tests, the homelab cluster setup, and the fleet deployment. No product code. |
-| [bdubs00/ax](https://github.com/bdubs00/ax) | `ax` | A fork of google/ax with the egress patch that the lab runs until it lands upstream. |
+| [bdubs00/ax](https://github.com/bdubs00/ax) | `ax` | A fork of google/ax with the egress patch that the project runs until it lands upstream. |
 
 ## Where to start
 
@@ -26,7 +25,6 @@ If you want to run something, pick the page that matches your goal.
 | Deploy a fleet with a front, a queue, and workers | [A fleet](deployment/fleet.md) |
 | Find a verb, a flag, a key, a route, or a tool | [Reference](reference/fw-commands.md) |
 | Work out why a Task or a run misbehaves | [Debugging a Task](operations/debugging.md) |
-| Run the test loops on the homelab | [Testing](operations/testing.md) |
 
 The [Design documents](design/index.md) are the full architecture of the kernel and the workbench, copied from the repositories. They are the source of truth for a design question. The pages of this site explain and point; they do not replace them.
 
@@ -36,4 +34,4 @@ AX gives an agent a sandbox with a folder that survives a freeze, a router that 
 
 ## Status
 
-As of 2026-10-20, stages 1 to 4 of the [kernel roadmap](design/kernel-roadmap.md) are done and verified on the homelab, together with stage 5 items 1 and 3. Stage 5 item 2, workload identity for a Task, waits on Agent Substrate. The [platform gaps](operations/platform-gaps.md) page lists what the platforms do not do yet and how the project works around each gap.
+As of 2026-10-20, stages 1 to 4 of the [kernel roadmap](design/kernel-roadmap.md) are done and verified on a cluster, together with stage 5 items 1 and 3. Stage 5 item 2, workload identity for a Task, waits on Agent Substrate. The [platform gaps](operations/platform-gaps.md) page lists what the platforms do not do yet and how the project works around each gap.

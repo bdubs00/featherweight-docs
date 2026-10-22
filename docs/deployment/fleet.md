@@ -1,6 +1,6 @@
 # A fleet
 
-A fleet is a front for people and a set of workers. A worker is a bare `fw` in an AX Task. The front is `fw-workbench` outside the sandboxes, and it reads the Tasks from the ax API and the runs from the egress stream of the workers. NATS carries the jobs in and the events out. This page tells how to deploy one, with the manifests of the lab as the worked example. [The fleet](../concepts/fleet.md) explains the idea.
+A fleet is a front for people and a set of workers. A worker is a bare `fw` in an AX Task. The front is `fw-workbench` outside the sandboxes. It reads the Tasks from the ax API and the runs from the egress stream of the workers. NATS carries the jobs in and the events out. This page tells how to deploy one, with `examples/agentgateway/fleet.yaml` and `examples/pools/fw.yaml` of the workbench as the worked examples. [The fleet](../concepts/fleet.md) explains the idea.
 
 ## The parts
 
@@ -13,17 +13,17 @@ flowchart LR
   W[Workers: ax Tasks] <--> N
   F -- list, suspend, resume --> A[ax API]
   F -- requests --> R[atenet router] --> W
-  W --> M[Model proxies]
+  W --> M[Model proxy]
 ```
 
-| Part | What it is | In the lab |
+| Part | What it is | In the examples |
 |---|---|---|
-| NATS | JetStream for the queues and the stream. The WebSocket listener is for workers, because the egress gateway of Substrate refuses a protocol whose server speaks first. | `e2e/fleet/base.yaml`: ports 4222 and 8080 (WebSocket) in the namespace `fw-fleet` |
-| The front | A Deployment of `fw-workbench` with no agents of its own. Two replicas can answer any request. | `e2e/fleet/fw.yaml`, the Deployment `fw-front` |
-| The workers | ax Tasks that run the lean kernel image. Named members come from `ax/run.sh`, pooled ones from `workbench.pools`. | `e2e/fleet/ax/run.sh` and `e2e/fleet/front-config.yaml` |
-| The model proxies | nginx Services with a cluster name that an egress rule can name. `ax-model` forwards to the local model with the `Host` header `localhost:8080`. `ax-anthropic` adds the key of the Claude API from a Secret, so no sandbox holds it. | `e2e/fleet/ax/model-proxy.yaml`, `e2e/fleet/ax/model-anthropic.yaml` |
-| agentgateway | Optional. One public URL that serves `/mcp`, `/ui`, and `/v1`. | `e2e/fleet/gateway.yaml` on port 8090 |
-| The collector | Optional. An OpenTelemetry collector that the front and the workers push to. See [Observability](observability.md). | the stack of Substrate in `otel-system` |
+| NATS | JetStream for the queues and the stream. The WebSocket listener is for workers, because the egress gateway of Substrate refuses a protocol whose server speaks first. | `fleet.yaml`: a StatefulSet with the ports 4222 and 8080 (WebSocket) in the namespace `fw-fleet` |
+| The front | A Deployment of `fw-workbench` with no agents of its own. Two replicas can answer any request. | `fleet.yaml`, the Deployment `fw-front` with two replicas |
+| The workers | ax Tasks that run the kernel image. A named member comes from `fw ax up`, a pooled one from `workbench.pools`. | `fleet.yaml` runs one worker `reviewer` as a plain Deployment. `pools/fw.yaml` keeps three Tasks of the profile `triage`. |
+| The model proxy | A Service with a cluster name that an egress rule can name. It forwards to the model server and can add the key, so no sandbox holds it. | `pools/fw.yaml` names `model-proxy.models.svc.cluster.local` |
+| agentgateway | Optional. One public URL that serves `/mcp`, `/ui`, and `/v1`. | `fleet.yaml`: the Gateway `fleet` for the host `fleet.example.com` |
+| The collector | Optional. An OpenTelemetry collector that the front and the workers push to. See [Observability](observability.md). | `examples/observability` of the kernel |
 
 ## The front
 
@@ -42,24 +42,23 @@ The front reads its configuration once, at its start, from the file in `FW_CONFI
 | `workbench.pools` | none | The pools of Tasks that the front keeps | none |
 | `workbench.sources` | none | The event sources | none |
 
-`atespaces` or `egress` turns the fleet on. The front also needs the bus (`bus.driver: nats`, `bus.url`) and the ax API (`ax.server`, `FW_AX_SERVER`) with the router (`ax.router`). The lab Deployment sets these variables:
+`atespaces` or `egress` turns the fleet on. The front also needs the bus, `bus.driver: nats` and `bus.url`. It needs the ax API, `ax.server` or `FW_AX_SERVER`, and the router, `ax.router`. A front of an ax fleet sets variables like these:
 
 ```yaml
 env:
   - {name: FW_HOME, value: /data}
-  - {name: FW_CONFIG, value: /etc/fw/fw.yaml}           # the ConfigMap fw-front-config
+  - {name: FW_CONFIG, value: /etc/fw/fw.yaml}           # the ConfigMap with the pools and the sources
   - name: FW_API_TOKEN
-    valueFrom: {secretKeyRef: {name: fw-api-token, key: token}}
+    valueFrom: {secretKeyRef: {name: fw-fleet-token, key: FW_API_TOKEN}}
   - {name: FW_AUTH_MODE, value: "oidc,token"}
-  - {name: FW_AUTH_OIDC_ISSUER, value: "http://issuer.fw-fleet.svc.cluster.local"}
-  - {name: FW_AUTH_OIDC_AUDIENCE, value: "<public URL>/mcp"}
-  - {name: FW_AUTH_OIDC_INSECURE, value: "true"}        # an http issuer, for the lab only
+  - {name: FW_AUTH_OIDC_ISSUER, value: "https://idp.example.com"}
+  - {name: FW_AUTH_OIDC_AUDIENCE, value: "https://fleet.example.com/mcp"}
   - {name: FW_AUTH_OIDC_NAME_CLAIM, value: email}
-  - {name: FW_AUTH_OIDC_CLIENT_ID, value: fw-lab}        # turns the browser sign-in on
+  - {name: FW_AUTH_OIDC_CLIENT_ID, value: "<client id>"}  # turns the browser sign-in on
   - name: FW_MCP_STATE_KEY
-    valueFrom: {secretKeyRef: {name: fw-front-keys, key: FW_MCP_STATE_KEY}}
+    valueFrom: {secretKeyRef: {name: fw-front, key: FW_MCP_STATE_KEY}}
   - name: FW_GRANT_KEY
-    valueFrom: {secretKeyRef: {name: fw-front-keys, key: FW_GRANT_KEY}}
+    valueFrom: {secretKeyRef: {name: fw-front, key: FW_GRANT_KEY}}
   - {name: FW_WORKBENCH_GRANTS_DIR, value: /data/grants}  # a PersistentVolumeClaim
   - {name: FW_BUS_DRIVER, value: nats}
   - {name: FW_BUS_URL, value: "nats://nats.fw-fleet.svc.cluster.local:4222"}
@@ -70,47 +69,43 @@ env:
   - {name: FW_WORKBENCH_FLEET_SUSPEND_AFTER, value: 60s}
   - {name: FW_AX_SERVER, value: "ax-server.ax-system.svc.cluster.local:8080"}
   - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://opentelemetry-collector.otel-system.svc.cluster.local:4318"}
-  - {name: FW_MCP_AUTH_AUDIENCE, value: "<public URL>/mcp"}
+  - {name: FW_MCP_AUTH_AUDIENCE, value: "https://fleet.example.com/mcp"}
 ```
 
-The two replicas share the cookie key and the grant key of the Secret `fw-front-keys`, and the grants on one volume, so a connection and a token request can land on either. The Deployment carries the annotation `fw.dev/front-config` with a hash of the rendered configuration, so a change of the ConfigMap restarts every replica. Two replicas with two configurations fight over a pool. Two Services expose the front: `fw-front` for `/ui`, `/v1`, and `/.well-known`, and `fw-front-mcp` with the label `fw.dev/mcp: front` and the `appProtocol` `agentgateway.dev/mcp`.
+The two replicas share the cookie key and the grant key of one Secret, and the grants on one volume. A connection and a token request can therefore land on either. The front reads its configuration once, so a change of the ConfigMap needs a restart of every replica. A hash of the rendered configuration in an annotation of the pod template does that. Two replicas with two configurations fight over a pool. Two Services expose the front: `fw-front` for `/ui`, `/v1`, and `/.well-known`, and `fw-front-mcp` with the label `fw.dev/mcp: front` and the `appProtocol` `agentgateway.dev/mcp`.
 
 At every interval the front lists the Tasks, reads the queues, and suspends a running Task that stayed idle for `suspendAfter`. Before a suspend it reads `GET /v1/status` of the Task once through the router. It also suspends a Task whose status says `blocked` after a storage failure. The next request restarts that Task from its ledger (see [The fleet](../concepts/fleet.md#idle-and-the-suspend-controller)). A job wakes the sleeping Tasks that serve its profile, and so do jobs that wait in a queue. See [sections 4.12](../design/workbench-architecture.md#412-the-suspend-controller) and [4.13](../design/workbench-architecture.md#413-queue-depth).
 
 ## A worker
 
-A worker needs no key of the block `workbench`. Its `fw.yaml` names the bus, the model, the token broker, the spawner, and its profile. This is `e2e/fleet/ax/fw.yaml` of the lab, cut to the keys that matter. `run.sh` fills the variables before the file goes into the Workspace:
+A worker needs no key of the block `workbench`. Its `fw.yaml` names the bus, the model, the token broker, the spawner, and its profile. This is the `fw.yaml` of a named member, cut to the keys that matter:
 
 ```yaml
 auth:
-  mode: ${AUTH}                 # token, or oidc,token when the issuer exists
-model: ${FLEET_MODEL}
-effort: ${FLEET_EFFORT}
+  mode: oidc,token              # token alone, without an issuer
+model: openai/<model>
+effort: low
 providers:
   openai:
-    baseUrl: ${FLEET_MODEL_URL}          # http://ax-model.fw-fleet.svc.cluster.local:8080/v1
-    apiKeyEnv: OPENAI_API_KEY
-  anthropic:
-    baseUrl: ${FLEET_ANTHROPIC_URL}      # http://ax-anthropic.fw-fleet.svc.cluster.local:8080
-    apiKeyEnv: ANTHROPIC_API_KEY
+    baseUrl: http://model-proxy.models.svc.cluster.local:8080/v1
+    apiKeyEnv: OPENAI_API_KEY   # a placeholder, because the proxy holds the key
 prices:
-  openai/<local model>: {input: 0, output: 0}
-  anthropic/claude-haiku-5-5: {input: 0.10, output: 0.50}
+  openai/<model>: {input: 0, output: 0}
 bus:
   driver: nats
-  url: ${FLEET_NATS_URL}        # ws://nats.fw-fleet.svc.cluster.local:8080
+  url: ws://nats.fw-fleet.svc.cluster.local:8080   # WebSocket, because the egress gateway carries HTTP
   egress: fw.events             # the front reads the lifecycle events here
-  intake: fw.jobs.${AGENT}      # the front puts the jobs of this profile here
+  intake: fw.jobs.reviewer      # the front puts the jobs of this profile here
   egressTypes: [fw.run.queued, fw.run.started, fw.run.resumed, fw.run.suspended, fw.run.finished, fw.approval.requested, fw.approval.decided, fw.run.annotated, fw.turn.started, fw.message.received, fw.run.child, fw.outcome.evaluated]
   options:
     concurrency: 1              # a Task runs one run at a time
 tools:
-  builtin: [bash, files, memory, clock, ask_user, spawn_task, await_task, propose_agent, env]
+  builtin: [bash, files, memory, clock, ask_user, spawn_task, await_task, env]
   files:
     root: /workspace
   mcp:
     - name: github
-      endpoint: ${FLEET_GITHUB_MCP_URL}
+      endpoint: http://github-mcp.fw-fleet.svc.cluster.local:8082
       auth:
         bearer: GITHUB_MCP_TOKEN      # a placeholder that the egress gateway replaces
       trusted: true
@@ -125,41 +120,53 @@ budget:
   maxTurns: 12
   deadline: 15m
   maxToolCalls: 24
-${PROFILE}                      # the agents and the access block of ax/profiles/<task>.yaml
+agents:
+  reviewer:                     # the profile of this member, with its access block
+    system: You review pull requests in the repository under /workspace.
+    tools: [bash, files, "github.*"]
 ```
 
 `bus.options.concurrency: 1` matters: the NATS intake takes four jobs at a time by default, so one Task holds four jobs while the others idle. The URL of the bus is `ws://`, because a Task reaches NATS over WebSocket. The token broker is `tokens.url`, which the Task sets with the variable `FW_TOKENS_URL`. See [the kernel architecture, sections 9.3](../design/kernel-architecture.md#93-intake) and [9.4](../design/kernel-architecture.md#94-egress).
 
-The Task of a member, `e2e/fleet/ax/task.yaml`, sets these variables: `FW_API_TOKEN`, the model URLs and selector, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` as placeholders because the proxies hold the keys, `GITHUB_MCP_TOKEN` as a placeholder because the egress gateway puts the token in its place, `FW_TOKENS_URL` with the Service of the front, and `OTEL_EXPORTER_OTLP_ENDPOINT` with the collector. In the OIDC phase it adds `FW_AUTH_OIDC_ISSUER`, `FW_AUTH_OIDC_AUDIENCE`, `FW_AUTH_OIDC_INSECURE`, and `FW_AUTH_OIDC_NAME_CLAIM`. A migrator adds `FW_TOOLS_USER=none`, because its check applies a role to the Task itself.
+The Task of a member sets these variables in `spec.env`:
+
+- `FW_API_TOKEN`, the static token of the fleet.
+- The model URLs and the model selector.
+- `OPENAI_API_KEY` as a placeholder, because the proxy holds the key.
+- `GITHUB_MCP_TOKEN` as a placeholder, because the egress gateway puts the token in its place.
+- `FW_TOKENS_URL` with the Service of the front.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` with the collector.
+- With an issuer, `FW_AUTH_OIDC_ISSUER`, `FW_AUTH_OIDC_AUDIENCE`, and `FW_AUTH_OIDC_NAME_CLAIM`.
+
+[One Task on AX](one-task-on-ax.md) builds such a Task with `fw ax up`.
 
 ## The egress of a worker
 
-A worker reaches nothing that its egress policy does not allow. `e2e/fleet/ax/egress.json` of the lab is the policy of a member, and `run.sh` writes the same rules without their effects into `spec.egress` of the Task.
+A worker reaches nothing that its egress policy does not allow. With the patched AX, `spec.egress` of the Task carries the rules, and ax creates the policy before the first run ([Platform gaps and patches](../operations/platform-gaps.md)). These are the rules of the worker above:
 
 | Rule | Allows |
 |---|---|
 | `http` `nats.fw-fleet.svc.cluster.local:8080` | The WebSocket listener of NATS |
-| `http` `ax-model.fw-fleet.svc.cluster.local:8080` | The local model behind its proxy |
-| `http` `ax-anthropic.fw-fleet.svc.cluster.local:8080` | The Claude API behind its proxy |
+| `http` `model-proxy.models.svc.cluster.local:8080` | The model behind its proxy |
 | `http` `fw-front.fw-fleet.svc.cluster.local:8080` | The token broker of the front |
 | `http` `opentelemetry-collector.otel-system.svc.cluster.local:4318` | The OTLP push |
 | `http` `ax-server.ax-system.svc.cluster.local:8080` | The ax API, for `spawn_task` with `spawn.driver: ax` |
 | `http` `atenet-router.ate-system.svc.cluster.local:80` | The router, through which a parent reaches its children |
-| `http` `tickets.fw-fleet.svc.cluster.local:80` | The ticket system, a service that acts for a person |
-| `http` `github-mcp.fw-fleet.svc.cluster.local:8082` | The GitHub MCP server, with `replaceHeaders` that puts the token of the Secret `fw-fleet/github` in `Authorization` |
+| `http` `tickets.fw-fleet.svc.cluster.local:80` | An MCP server that acts for a person |
+| `http` `github-mcp.fw-fleet.svc.cluster.local:8082` | The GitHub MCP server, with `replaceHeaders` that puts the token of a Secret in `Authorization` |
 | `tlsPassthrough` `github.com`, `codeload.github.com` | A clone over TLS |
 
-In the OIDC phase a rule for `issuer.fw-fleet.svc.cluster.local:80` lets a Task read the keys of the issuer. A migrator adds `deb.debian.org:80` and TLS passthrough to `pypi.org`, `files.pythonhosted.org`, and `conda.anaconda.org` for its environment. `spec.egress` does not carry effects yet, so `e2e/fleet/ax/egress-apply.sh <actor> <atespace> <rules.json>` creates the policy with `kubectl-ate create egress-policy`, or updates it with the `uid` and the `version` of the live one. A pool names its rules under `egress.rules`, and the front warns about each address of a worker that no rule allows.
+With an issuer, a rule for its Service lets a Task read the keys of the issuer. An environment adds `deb.debian.org:80` and TLS passthrough to `pypi.org`, `files.pythonhosted.org`, and `conda.anaconda.org`. `spec.egress` does not carry effects yet. A credential injection such as `replaceHeaders` therefore needs the policy from `kubectl-ate create egress-policy`, with the rules and their effects. An update of the live policy needs its `uid` and its `version`. A pool names its rules under `egress.rules`, and the front warns about each address of a worker that no rule allows.
 
 ## The shared token and the OIDC audiences
 
-Every process of the fleet shares one static token. The front reads a worker with it, a worker accepts it, and a worker presents it to the front when it asks for the tokens of a person (the token broker, [section 11.9](../design/workbench-architecture.md#119-the-token-broker)). The token must have eight characters or more. In the lab, `deploy.sh` makes the Secret `fw-fleet/fw-api-token` with the key `token`, keeps a copy in `e2e/results/.fleet-token` readable by you alone, and names the Secret in the ConfigMap `ready` under `apiTokenSecret`. `run.sh` reads it into `FW_API_TOKEN` of every Task, and the front copies it into every Task of a pool.
+Every process of the fleet shares one static token. The front reads a worker with it, and a worker accepts it. When a worker asks the front for the tokens of a person, it presents the token too (the token broker, [section 11.9](../design/workbench-architecture.md#119-the-token-broker)). The token must have eight characters or more. `examples/agentgateway/README.md` creates it as the Secret `fw-fleet-token` with the key `FW_API_TOKEN`. Every Task reads it into `FW_API_TOKEN`, and the front copies it into every Task of a pool.
 
-People sign in with OIDC. The audience of their tokens is the public `/mcp` URL, and the same value goes in four places, so one token works on every process and the front can forward it: the gateway policy, `resourceMetadata.resource`, `FW_AUTH_OIDC_AUDIENCE`, and `FW_MCP_AUTH_AUDIENCE`. The lab runs two fronts in its second phase, one per gateway, so `run.sh` gives each Task `FW_AUTH_OIDC_AUDIENCE` with both `/mcp` URLs, and the Tasks accept the tokens of either front. See [Identity](../concepts/identity.md).
+People sign in with OIDC. The audience of their tokens is the public `/mcp` URL. The same value goes in four places: the gateway policy, `resourceMetadata.resource`, `FW_AUTH_OIDC_AUDIENCE`, and `FW_MCP_AUTH_AUDIENCE`. One token then works on every process, and the front can forward it. `FW_AUTH_OIDC_AUDIENCE` of a Task takes more than one URL, so a Task behind two fronts accepts the tokens of either. See [Identity](../concepts/identity.md).
 
 ## Pools
 
-A pool keeps a number of Tasks that run one profile. The front creates them with their Workspaces, replaces a Task of an older configuration once it is idle, one at a time, and deletes the Tasks above the count, never a Task with an active run. See [the workbench architecture, section 14](../design/workbench-architecture.md#14-pools) and `examples/pools/fw.yaml` of the workbench.
+A pool keeps a number of Tasks that run one profile. The front creates them with their Workspaces. It replaces a Task of an older configuration once it is idle, one at a time. It deletes the Tasks above the count, never a Task with an active run. See [the workbench architecture, section 14](../design/workbench-architecture.md#14-pools) and `examples/pools/fw.yaml` of the workbench.
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -176,11 +183,11 @@ A pool keeps a number of Tasks that run one profile. The front creates them with
 | `env` | Variables, each with `name` and `value`, or `name` and `fromEnv`, a variable of the front | none |
 | `resources`, `files` | The resources of the Task, and extra files of the Workspace | none |
 
-The front writes `fw` to `.fw/fw.yaml` of the Workspace and adds `bus.intake`, `bus.egress`, and `bus.egressTypes`, which a pool cannot set. It adds the defaults `auth.mode: token`, the bus and the ax addresses of the front, and `bus.options.concurrency: 1` on NATS. It marks each Task with `FW_POOL`, `FW_POOL_SPEC` (the hash of the rendered specification), `FW_POOL_GENERATION` and `FW_POOL_BASE` when the generation is above 0, and `FW_BASH_HIDE`, and it copies the static token under `auth.tokenEnv` of the worker. A pool cannot set `FW_*` or `AX_*` variables. Write a secret with `fromEnv`, never as `${NAME}`.
+The front writes `fw` to `.fw/fw.yaml` of the Workspace and adds `bus.intake`, `bus.egress`, and `bus.egressTypes`, which a pool cannot set. It adds the defaults `auth.mode: token`, the bus and the ax addresses of the front, and `bus.options.concurrency: 1` on NATS. It marks each Task with `FW_POOL`, `FW_POOL_SPEC` (the hash of the rendered specification), and `FW_BASH_HIDE`. When the generation is above 0, it adds `FW_POOL_GENERATION` and `FW_POOL_BASE`. It copies the static token under `auth.tokenEnv` of the worker. A pool cannot set `FW_*` or `AX_*` variables. Write a secret with `fromEnv`, never as `${NAME}`.
 
-The front has no leader. Two replicas with two configurations replace each other's Tasks at every interval, so raise `generation` with every change. The lab does this with `e2e/fleet/pool-generations.py`, which `front-config.sh` runs unless `FLEET_POOL_GENERATIONS=off`. See [section 14.5](../design/workbench-architecture.md#145-no-leader).
+The front has no leader. Two replicas with two configurations replace each other's Tasks at every interval, so raise `generation` with every change. See [section 14.5](../design/workbench-architecture.md#145-no-leader).
 
-The front owns the profiles of its pools. `agent_put`, `agent_delete`, and the builder write to the overlay of a pool, and Always allow on an approval adds an allow rule to it. On NATS the overlay lives in the key-value bucket `<stream>_POOL_<pool>`, `FW_POOL_<pool>` by default, with the entries `profile.<name>` and `allow.<rule>`. A change of the overlay changes the hash, and the pool rolls. See [section 14.9](../design/workbench-architecture.md#149-profiles-and-rules-of-a-pool).
+The front owns the profiles of its pools. `agent_put`, `agent_delete`, and the builder write to the overlay of a pool. Always allow on an approval adds an allow rule to it. On NATS the overlay lives in the key-value bucket `<stream>_POOL_<pool>`, `FW_POOL_<pool>` by default, with the entries `profile.<name>` and `allow.<rule>`. A change of the overlay changes the hash, and the pool rolls. See [section 14.9](../design/workbench-architecture.md#149-profiles-and-rules-of-a-pool).
 
 Review a change before the front acts:
 
@@ -190,7 +197,7 @@ fw-workbench pools render -config fw.yaml
 
 It prints the Workspaces and the Tasks with the overlay merged and a placeholder for every secret. Do not apply the output.
 
-The lab keeps two pools in `e2e/fleet/front-config.yaml`: `lab-pool`, one worker of the profile `pooled` that asks before each call of `clock`, and `tickets`, the triage workers of the ticket soak on the queue `fw.jobs.triage`, with `bus.intakeRetries: 2` and `maxCostUSD: 0.05`.
+`examples/pools/fw.yaml` keeps three workers of the profile `triage` on the queue `fw.jobs.triage`. Its policy allows every tool and asks before `tickets.update_ticket`, the one tool that writes to the ticket system. The file also offers a template `general`. From it, a person creates a runtime pool while the front runs, with the MCP tool `pool_put` or with `agent_put` and `workers`.
 
 ## Event sources
 
@@ -210,20 +217,24 @@ A source starts runs from an outside system. A webhook source takes `POST /v1/so
 | `redrive` | `maxAttempts` and `cooldown` for an event whose job reached the dead letter |
 | `runAs`, `runAsKind` | The principal of the runs, `source:<name>` and `workload` by default |
 
-The secret of a webhook never goes in the file. The lab keeps the bearer token of `lab-hook` in the Secret `fw-fleet/fw-lab-hook` and gives it to the front as `FW_LAB_HOOK_TOKEN`, and the HMAC key of the Gitea webhook in `tickets-hook` as `FW_TICKETS_HOOK_KEY` with the header `X-Gitea-Signature`:
+The secret of a webhook never goes in the file. `examples/sources/fw.yaml` reads the HMAC key of its ticket system from the variable `TICKETS_WEBHOOK_KEY` of the front, with the header `X-Signature-256`:
 
 ```yaml
 workbench:
   sources:
-    - name: lab-hook
-      agent: reviewer
-      auth: {mode: bearer, secret: FW_LAB_HOOK_TOKEN}
-      input: "Answer with the single word {{.word}} and nothing else."
-      title: "Hook {{.id}}"
-      key: "{{.id}}"
+    - name: tickets
+      agent: triage
+      auth: {mode: hmac, secret: TICKETS_WEBHOOK_KEY, header: X-Signature-256}
+      input: |
+        A ticket changed in the ticket system. Triage it.
+        Ticket: {{.id}}
+        Summary: {{.summary}}
+      title: "Triage {{.id}}"
+      key: "{{.id}}/{{.updated}}"
+      redrive: {maxAttempts: 3, cooldown: 10m}
 ```
 
-The poll form of the ticket source reads the open tickets of Gitea every 30 seconds with `poll.secret: GITEA_POLL_TOKEN` and `poll.header: Authorization`. `front-config.sh` chooses the form with `TICKETS_SOURCE=webhook` or `poll`.
+The second source of the file, `alerts`, polls an alert system every two minutes with `poll.secret: ALERTS_API_TOKEN`. It reads the array `data.alerts` and keys each run on the fingerprint and the start time of the alert, with `dedupFor: 24h`.
 
 ## agentgateway
 
@@ -237,24 +248,24 @@ The poll form of the ticket source reads the open tickets of Gitea every 30 seco
 - Give every replica the same `FW_MCP_STATE_KEY`.
 - Do not route `/metrics`.
 
-The lab Gateway `fleet` listens on port 8090. Its HTTPRoute sends `/mcp` to the `AgentgatewayBackend` `fw-mcp` and `/ui`, `/v1`, and `/.well-known` to the Service `fw-front`, and an `AgentgatewayPolicy` raises the body limit to 48 MiB for runs with files. See [section 3.8](../design/workbench-architecture.md#38-gateway).
+The Gateway `fleet` of the example listens on port 80 for the host `fleet.example.com`. The HTTPRoute `fleet-mcp` sends `/mcp` and the two `/.well-known` documents of MCP to the `AgentgatewayBackend` `fw-mcp`. That backend selects the Service with the label `fw.dev/mcp: front`. The HTTPRoute `fleet-http` sends `/ui` and `/v1` to the Service `fw-front`. The `AgentgatewayPolicy` `fleet-mcp-auth` holds the login policy with the audience. A run with files needs a body limit above the default of the gateway, which another `AgentgatewayPolicy` on the route raises. See [section 3.8](../design/workbench-architecture.md#38-gateway).
 
-## The order of steps in the lab
+## The order of steps
 
-1. Build and push the images. Start the tunnel and run `e2e/fleet/redeploy.sh`. See [Build and images](images.md).
-2. Choose the model. `e2e/fleet/model.sh` takes `FLEET_MODEL` and `FLEET_EFFORT` from the environment or `e2e/local.env`, and defaults to the local model of the ConfigMap `ready`. A paid model is never a default. For the Claude API, run `e2e/fleet/anthropic-key.sh` first, which puts the key in the Secret `fw-fleet/anthropic`, then set `FLEET_MODEL=anthropic/<model>`.
-3. Run `e2e/fleet/deploy.sh`. It applies `base.yaml`, makes the Secrets `fw-api-token`, `fw-front-keys`, `fw-lab-hook`, `tickets-hook`, and `gitea-agent` when they do not exist, applies the model proxies, renders `front-config.yaml` with `front-config.sh` into the ConfigMap `fw-front-config`, applies `fw.yaml` with the images and the public URL, patches the annotation of the front, applies `gateway.yaml`, runs `observe.sh`, waits for NATS and the front, and writes the ConfigMap `ready` with `natsURL`, `natsWsURL`, `frontURL`, `publicURL`, the images, the model, `apiTokenSecret`, and `fleetSubject`. `FLEET_PUBLIC` names the public URL.
-4. Run `e2e/fleet/redeploy.sh` once more on a new cluster, so `ready` carries `imageWorker`.
-5. Run `e2e/fleet/ax/run.sh`. It renders the Workspace and the Task of each member from `task.yaml`, `fw.yaml`, and `profiles/<task>.yaml`, renders `egress.json`, deletes the old Task, applies the new one, applies the policy with `egress-apply.sh`, and waits until `/readyz` answers through the router. A Task that crashed at boot gets a resume, up to three times. The members are `fw-fleet-alpha`, `fw-fleet-migrator` with `FLEET_MIGRATORS` copies, and `fw-fleet-reviewer`. `FLEET_ONLY` runs one of them.
-6. For the browser sign-in, run `e2e/fleet/deploy-oidc.sh`. It builds the issuer `oauthlab`, makes the Secret `fleet-issuer` from `e2e/results/.fleet-issuer.pem`, applies `oidc.yaml` with the second front `fw-front-oidc` and its Gateway on port 8091, and records `oidcPublicMCP` in `ready`. Then run `ax/run.sh` again, so the Tasks accept the tokens of that front.
-7. Check the result with `e2e/fleet/verify.py`, `verify-workbench.py`, `verify-oidc.py`, `ax/verify.sh`, and `features.py`, each with `python3 -I`, and `check-export.sh` for the telemetry. See [Testing](../operations/testing.md).
+1. Build the images and push them to a registry that the cluster reaches. Substrate pulls an actor image by digest only, so record the digest of each push. See [Build and images](images.md).
+2. If one public URL serves the fleet, install agentgateway v1.6.0 and its CRDs with Helm. `examples/agentgateway/README.md` has the commands.
+3. Create the namespace `fw-fleet` and two Secrets: `fw-front` with the key that the replicas of the front share, and `fw-fleet-token` with the static token of the fleet.
+4. Put the model server behind a proxy Service in the cluster. An egress rule names a DNS name, and Substrate accepts only local names in the `Host` header.
+5. Replace the placeholders at the top of `fleet.yaml` and apply it. It creates NATS, the front, its two Services, and the routes of the gateway. Point the DNS name at the address of the Gateway.
+6. Create the workers. A named member comes from `fw ax up` with a profile file ([One Task on AX](one-task-on-ax.md)). A pool comes from `workbench.pools` in the configuration of the front.
+7. Add the server to Claude Code and call `fleet` ([Use a fleet from Claude Code](../getting-started/from-claude-code.md)). The members appear with the state `live` or `quiet`.
 
-A later change of the images or of the configuration of the front goes through `redeploy.sh` again, which rolls the Deployments and restarts the front. A change of a member goes through `ax/run.sh`, which replaces its Task.
+A later change of the images or of the configuration of the front rolls the Deployment and restarts the front. A named member does not change: run `fw ax down` and `fw ax up` again. When its `generation` rises, a pool rolls.
 
 ## Sources
 
 - `featherweight-workbench/README.md` (section "The fleet")
-- `featherweight-workbench/docs/ARCHITECTURE.md` (sections 4, 13, and 14)
+- `featherweight-workbench/docs/ARCHITECTURE.md` (sections 3.8, 4, 13, and 14)
 - `featherweight-workbench/fleet/config.go`
 - `featherweight-workbench/fleet/types.go`
 - `featherweight-workbench/fleet/suspend.go`
@@ -266,26 +277,4 @@ A later change of the images or of the configuration of the front goes through `
 - `featherweight-workbench/examples/agentgateway/README.md`
 - `featherweight-workbench/examples/agentgateway/fleet.yaml`
 - `featherweight-kernel/examples/fw.yaml`
-- `featherweight-lab/e2e/README.md`
-- `featherweight-lab/e2e/fleet/deploy.sh`
-- `featherweight-lab/e2e/fleet/deploy-oidc.sh`
-- `featherweight-lab/e2e/fleet/redeploy.sh`
-- `featherweight-lab/e2e/fleet/front-config.yaml`
-- `featherweight-lab/e2e/fleet/front-config.sh`
-- `featherweight-lab/e2e/fleet/model.sh`
-- `featherweight-lab/e2e/fleet/base.yaml`
-- `featherweight-lab/e2e/fleet/fw.yaml`
-- `featherweight-lab/e2e/fleet/gateway.yaml`
-- `featherweight-lab/e2e/fleet/oidc.yaml`
-- `featherweight-lab/e2e/fleet/ax/run.sh`
-- `featherweight-lab/e2e/fleet/ax/task.yaml`
-- `featherweight-lab/e2e/fleet/ax/fw.yaml`
-- `featherweight-lab/e2e/fleet/ax/egress.json`
-- `featherweight-lab/e2e/fleet/ax/egress-apply.sh`
-- `featherweight-lab/e2e/fleet/ax/model-proxy.yaml`
-- `featherweight-lab/e2e/fleet/ax/model-anthropic.yaml`
-- `featherweight-lab/e2e/fleet/ax/profiles/fw-fleet-alpha.yaml`
-- `featherweight-lab/e2e/fleet/ax/profiles/fw-fleet-migrator.yaml`
-- `featherweight-lab/e2e/fleet/ax/profiles/fw-fleet-reviewer.yaml`
-- `featherweight-lab/e2e/fleet/ax/profiles/fw-env-measure.yaml`
-- `featherweight-lab/e2e/fleet/tickets/setup.sh`
+- `featherweight-kernel/cli/ax.go`

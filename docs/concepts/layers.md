@@ -1,6 +1,6 @@
 # The four layers
 
-Featherweight is four layers that stack. Agent Substrate makes sealed boxes. Google AX hands the boxes out and keeps the list. The kernel is the one worker who lives inside a box. The workbench is the front desk outside every box, where people come in. The lab is the test rig and the cluster setup, not a layer of the product.
+Featherweight is four layers that stack. Agent Substrate makes sealed boxes. Google AX hands the boxes out and keeps the list. The kernel is the one worker who lives inside a box. The workbench is the front desk outside every box, where people come in.
 
 ```mermaid
 flowchart TB
@@ -44,7 +44,7 @@ Substrate also runs the atenet router, the only door into an actor. A request na
 
 AX sits on top of Substrate and makes it feel like Kubernetes. You write a YAML file with a Task, which names the image and the environment variables, and a Workspace, which names the files and git repositories to put in `/workspace`. Then `ax apply` creates them. The commands `ax suspend`, `ax resume`, and `ax ssh` do what their names say.
 
-AX treats whatever runs inside the Task as a black box. It does not know what a model turn is, whether the process works or waits, or when it is safe to suspend. It creates every Task suspended until something resumes it. The lab runs a patched AX that adds `spec.egress` to the Task, so the Task itself declares the hosts it can reach, and a child Task inherits that list. See [Platform gaps and patches](../operations/platform-gaps.md).
+AX treats whatever runs inside the Task as a black box. It does not know what a model turn is, whether the process works or waits, or when it is safe to suspend. It creates every Task suspended until something resumes it. Featherweight runs a patched AX that adds `spec.egress` to the Task. The Task itself then declares the hosts it can reach, and a child Task inherits that list. See [Platform gaps and patches](../operations/platform-gaps.md).
 
 ## The kernel
 
@@ -61,10 +61,6 @@ The workbench, the binary `fw-workbench`, runs outside every box as a normal Kub
 The workbench reads the list of Tasks from the AX API and the events from the bus to show the fleet. It puts jobs on the queues. It sends an interactive request to a Task through the router. It suspends a Task that reports idle, and it wakes a sleeping Task when a job arrives for it. It mints the short-lived tokens that the workers ask for. It keeps pools, a fixed number of Tasks that run one profile. It holds almost no state of its own: AX holds the Tasks, Substrate holds `/workspace`, the ledger inside each Task holds the run, and Prometheus and Grafana hold the metrics. See [The fleet](fleet.md) and [Identity](identity.md).
 
 The same binary also runs on a laptop with every verb of `fw`, the page, and the MCP server over standard input and output. See [Run the workbench on your machine](../getting-started/workbench-local.md).
-
-## The lab
-
-The lab repository holds no product code. It holds the end-to-end tests that drive a running `fw` or `fw-workbench` over the wire with a real model, the installer of one homelab k3s cluster with Substrate and AX, the fleet deployment of that cluster, and the ticket soak. See [The homelab cluster](../operations/homelab.md) and [Testing](../operations/testing.md).
 
 ## One job through all four layers
 
@@ -90,6 +86,4 @@ The value shows up when runs are long, when they wait on approvals or sign-ins, 
 - featherweight-kernel/docs/KERNEL_MAP.md
 - featherweight-workbench/README.md
 - featherweight-workbench/docs/PRODUCT_DIRECTION.md
-- featherweight-lab/e2e/README.md
-- featherweight-lab/e2e/fleet/ax/hello.yaml
 - ax/README.md

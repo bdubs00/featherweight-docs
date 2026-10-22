@@ -1,5 +1,5 @@
 site_name: Featherweight
-site_description: Durable agents on Google AX and Agent Substrate. The kernel, the workbench, and the lab.
+site_description: Durable agents on Google AX and Agent Substrate. The kernel and the workbench.
 site_url: https://bdubs00.github.io/featherweight-docs/
 repo_url: https://github.com/bdubs00/featherweight-kernel
 repo_name: bdubs00/featherweight-kernel
@@ -92,8 +92,6 @@ nav:
       - A fleet: deployment/fleet.md
       - Observability: deployment/observability.md
   - Operations:
-      - The homelab cluster: operations/homelab.md
-      - Testing: operations/testing.md
       - Debugging a Task: operations/debugging.md
       - Platform gaps and patches: operations/platform-gaps.md
   - Design documents:

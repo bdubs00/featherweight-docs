@@ -1,6 +1,6 @@
 # Observability
 
-`fw` serves Prometheus metrics at `/metrics`, and it pushes its metrics, its ledger, and its traces to an OpenTelemetry collector when the standard `OTEL_*` variables name one. This page lists the metric families, the measures of task quality, and the rule for their labels. It also covers the series of the front, the export, the example setup of the kernel, and the checks of the lab. The ledger, an append-only log of the run, stays the exact record of usage. Prometheus is for trends, errors, and latency, never for billing.
+`fw` serves Prometheus metrics at `/metrics`, and it pushes its metrics, its ledger, and its traces to an OpenTelemetry collector when the standard `OTEL_*` variables name one. This page lists the metric families, the measures of task quality, and the rule for their labels. It also covers the series of the front, the export, the example setup of the kernel, and the telemetry stack of Substrate. The ledger, an append-only log of the run, stays the exact record of usage. Prometheus is for trends, errors, and latency, never for billing.
 
 ## The metrics endpoint
 
@@ -181,26 +181,13 @@ The series of the front cover the fleet without a request to a Task, so an alert
 
 The README of the directory has a section on the five task-quality measures, with the PromQL queries of each measure and the receipt API. `config_test.go` makes sure that the dashboard and the alert rules parse. With the Prometheus Operator, copy the groups into a `PrometheusRule`. `promtool check config prometheus.yml` tests both files. The pods of `fw-front` in `examples/agentgateway` carry the label `fw.dev/scrape: "true"`, and the gateway does not route `/metrics`.
 
-## The lab checks
+## The stack of Substrate
 
-The installer of Agent Substrate puts a collector, a Prometheus, and a Jaeger in the namespace `otel-system`. The front and every worker of the lab push to `http://opentelemetry-collector.otel-system.svc.cluster.local:4318`, and the egress of each worker allows it. Two scripts of the lab work with that stack.
+The installer of Agent Substrate puts a collector, a Prometheus, and a Jaeger in the namespace `otel-system`. A fleet on Substrate can push to `http://opentelemetry-collector.otel-system.svc.cluster.local:4318`, if the egress of each worker allows it. Two facts of that stack matter.
 
-`e2e/fleet/observe.sh` lets the Prometheus of the stack keep the `fw` series. Its keep rule drops every series that is not `substrate_*` or `otelcol_*`, so the script changes the regex in the ConfigMap `otel-system/prometheus-config` to `(substrate|otelcol|fw)_.*|target_info` and restarts Prometheus when the rule changed. `target_info` carries the version of each pusher. `deploy.sh` runs the script, and it is safe to run twice.
+The Prometheus of the stack keeps the series `substrate_*` and `otelcol_*` only. To keep the `fw_*` series and `target_info`, change the keep rule in the ConfigMap `otel-system/prometheus-config` to `(substrate|otelcol|fw)_.*|target_info` and restart Prometheus. `target_info` carries the version of each pusher.
 
-`e2e/fleet/check-export.sh` reads back what the fleet pushed and changes nothing:
-
-1. It prints the lines of the front that say which sources it reads and what it exports.
-2. It forwards the port of `svc/prometheus` in `otel-system` and queries `fw_runs_total` by `exported_instance`, `agent`, `outcome`, and `batch`, then `fw_ledger_events_total`, `fw_build_info`, `fw_fleet_queue_pending`, and `fw_fleet_runs_finished_total`.
-3. It forwards the port of `svc/jaeger` and lists the services that Jaeger knows.
-4. It fails when `fw_runs_total` or `fw_fleet_queue_pending` has no series.
-
-```sh
-export KUBECONFIG=~/.kube/k3s.yaml
-e2e/fleet/observe.sh
-e2e/fleet/check-export.sh
-```
-
-The Prometheus of the stack scrapes the collector, so the label of a pusher is `exported_instance`, not `instance`. See [Testing](../operations/testing.md) for the other checks of the lab.
+The Prometheus of the stack scrapes the collector, so the label of a pusher is `exported_instance`, not `instance`. To make sure that the export works, forward the port of `svc/prometheus` in `otel-system` and query `fw_runs_total` and `fw_fleet_queue_pending`. Then forward the port of `svc/jaeger` and list the services that Jaeger knows.
 
 ## Sources
 
@@ -227,9 +214,3 @@ The Prometheus of the stack scrapes the collector, so the label of a pusher is `
 - `featherweight-workbench/fleet/metrics.go`
 - `featherweight-workbench/fleet/suspend.go`
 - `featherweight-workbench/examples/agentgateway/README.md`
-- `featherweight-lab/e2e/fleet/check-export.sh`
-- `featherweight-lab/e2e/fleet/observe.sh`
-- `featherweight-lab/e2e/fleet/deploy.sh`
-- `featherweight-lab/e2e/fleet/fw.yaml`
-- `featherweight-lab/e2e/fleet/ax/run.sh`
-- `featherweight-lab/e2e/fleet/ax/egress.json`

@@ -1,6 +1,6 @@
 # Build and images
 
-This page tells how to build the two binaries, `fw` and `fw-workbench`, how to build their container images, which build tags select the drivers of `fw`, and how the lab builds and publishes the images that its fleet runs.
+This page tells how to build the two binaries, `fw` and `fw-workbench`, and their container images. It also tells which build tags select the drivers of `fw`.
 
 ## The binaries
 
@@ -90,7 +90,7 @@ make image-toolbox TAGS=lean,nats,openai,oidc,metrics,memory_sqlite
 
 A configuration that names a driver that the build left out stops at the start with the name of the driver. A surface or a built-in tool that the build left out is skipped with a warning. A worker that pushes its metrics over OTLP still needs the tag `metrics`, because the push reads the registry of the metrics surface (see [Observability](observability.md)). A worker that people reach through the front needs `oidc`, because the front forwards their credentials.
 
-The variable `TAGS` goes to `go build -tags` in the Makefile and to the build argument `TAGS` in the Dockerfiles. This builds a lean worker image with the drivers that the lab uses, on the toolbox base:
+The variable `TAGS` goes to `go build -tags` in the Makefile and to the build argument `TAGS` in the Dockerfiles. This builds a lean worker image for a fleet, on the toolbox base:
 
 ```sh
 make image-toolbox TAGS=lean,nats,openai,oidc,metrics,env,anthropic
@@ -105,36 +105,9 @@ docker build --build-arg TAGS=lean,nats,openai,oidc -t fw:worker .
 
 Section 15 of the kernel architecture gives the sizes: about 82 MB for the full binary, about 38 MB for the lean core, and about 41 MB for a worker with `nats`, `openai`, and `oidc`. See [the kernel architecture, section 15](../design/kernel-architecture.md#15-dependencies).
 
-## How the lab builds and publishes images
+## Push by digest
 
-The lab pushes its images to a registry on the k3s node. The push goes through a tunnel to `localhost:5001`, which the user service `fw-e2e-tunnel` opens:
-
-```sh
-systemctl --user start fw-e2e-tunnel
-e2e/fleet/redeploy.sh            # builds from main of both repositories
-e2e/fleet/redeploy.sh my-branch  # builds the workbench from a git ref
-```
-
-`e2e/fleet/redeploy.sh [git-ref]` does these steps:
-
-1. It checks that the registry answers, and that the workbench and the kernel checkouts exist. `E2E_WORKBENCH_DIR` and `E2E_KERNEL_DIR` name them. The defaults are the two directories next to the lab.
-2. It makes a temporary git worktree of the workbench ref, `main` by default, and one of the kernel ref `E2E_KERNEL_REF`, also `main` by default. Edits in a working tree never leak into an image.
-3. It builds `featherweight-workbench:fleet` from `Dockerfile` and `featherweight-workbench:fleet-toolbox` from `Dockerfile.toolbox`, both with the kernel worktree as the build context `kernel` and the short commit as `VERSION`.
-4. It builds `featherweight-kernel:fleet-worker` from the kernel `Dockerfile.toolbox` with `TAGS=lean,nats,openai,oidc,metrics,env,anthropic`. This is the worker image of the fleet. It has the tools of the toolbox, because the agents of the lab use `bash`.
-5. It pushes the three images and reads the digest of each one with `docker inspect`. Substrate pulls an actor image by digest only.
-6. It writes `e2e/results/.fleet-images` with the variables `FLEET_IMAGE_STATIC`, `FLEET_IMAGE_TOOLBOX`, `FLEET_IMAGE_WORKER`, and `FLEET_COMMIT`. `deploy.sh` and `front-config.sh` read that file.
-7. If the namespace `fw-fleet` exists, it renders the configuration of the front again with the new worker image, applies the ConfigMap `fw-front-config`, and patches the annotation `fw.dev/front-config` of the Deployment `fw-front` with a hash of it, so the front restarts. It sets the image of each Deployment with the label `fw.dev/image=static` or `fw.dev/image=toolbox`, waits for every rollout, and patches the ConfigMap `fw-fleet/ready` with `imageStatic`, `imageToolbox`, `imageWorker`, and `commit`.
-
-The README of the lab names the tags of the worker as `lean,nats,openai,oidc,metrics,env`. The script adds `anthropic`, so the worker reaches the Claude API through the proxy `ax-anthropic`. The script wins.
-
-`e2e/fleet/deploy.sh` creates the ConfigMap `ready` without `imageWorker`. `redeploy.sh` adds the key only when the ConfigMap exists. On a new cluster, run `redeploy.sh` again after the first `deploy.sh`. Otherwise `e2e/fleet/ax/run.sh` falls back to `imageToolbox`, the workbench image. The worker image of the fleet comes from the ConfigMap:
-
-```sh
-export KUBECONFIG=~/.kube/k3s.yaml
-kubectl -n fw-fleet get cm ready -o jsonpath='{.data.imageWorker}'
-```
-
-The k3s loop of the end-to-end tests builds its own image. `e2e/k3s/run.sh` builds `featherweight-kernel:e2e` from the kernel `Dockerfile.toolbox` without tags, pushes it, and keeps the digest in `e2e/results/.k3s-image`. `E2E_SKIP_BUILD=1` reuses it. See [Testing](../operations/testing.md).
+Substrate pulls an actor image by digest only, so a Task names its image as `<registry>@sha256:<digest>`. After a push, read the digest with `docker inspect` and put it in the Task, or in the `image` of a pool. A new image needs a new Task, because a Task does not change. See [One Task on AX](one-task-on-ax.md) and [A fleet](fleet.md).
 
 ## Sources
 
@@ -165,8 +138,3 @@ The k3s loop of the end-to-end tests builds its own image. `e2e/k3s/run.sh` buil
 - `featherweight-workbench/Dockerfile.toolbox`
 - `featherweight-workbench/README.md`
 - `featherweight-workbench/docs/ARCHITECTURE.md` (section 1.2)
-- `featherweight-lab/e2e/fleet/redeploy.sh`
-- `featherweight-lab/e2e/fleet/deploy.sh`
-- `featherweight-lab/e2e/fleet/ax/run.sh`
-- `featherweight-lab/e2e/k3s/run.sh`
-- `featherweight-lab/e2e/README.md`

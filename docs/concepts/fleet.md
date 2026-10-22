@@ -50,7 +50,7 @@ The suspend controller reads the status of an idle Task right before it suspends
 
 ## The name of a member
 
-A member is named `<atespace>/<task>`, and its address is `ax:<atespace>/<task>`. That address is also the node name that a worker writes into every ledger event, the key `node` of its configuration. In the lab, the atespace `default` holds the Tasks `fw-fleet-alpha`, `fw-fleet-migrator`, and `fw-fleet-reviewer`. The migrator is therefore the member `default/fw-fleet-migrator` at the address `ax:default/fw-fleet-migrator`. A worker outside ax that publishes events is visible under its node name, without an address. It leaves the view after `workbench.fleet.expire` without an event.
+A member is named `<atespace>/<task>`, and its address is `ax:<atespace>/<task>`. That address is also the node name that a worker writes into every ledger event, the key `node` of its configuration. A Task `fw-fleet-migrator` in the atespace `default` is therefore the member `default/fw-fleet-migrator` at the address `ax:default/fw-fleet-migrator`. A worker outside ax that publishes events is visible under its node name, without an address. It leaves the view after `workbench.fleet.expire` without an event.
 
 ## Reaching a run of a member
 
@@ -101,7 +101,7 @@ The controller and the wakes are in [4.12 The suspend controller](../design/work
 
 ## One enqueued job
 
-The diagram shows one job from Claude Code to a sleeping worker and back. The worker is the lab Task `fw-fleet-migrator`, which takes the queue `fw.jobs.migrator`.
+The diagram shows one job from Claude Code to a sleeping worker and back. The worker is a Task `fw-fleet-migrator`, which takes the queue `fw.jobs.migrator`.
 
 ```mermaid
 sequenceDiagram
@@ -151,7 +151,7 @@ Four limits bound a tree. `spawn.maxDepth`, 3 by default, bounds how deep the tr
 
 The MCP tool `fork` branches a run: the branch keeps the events of the run up to `seq` and goes on with `input`, with `model`, or the same way again. With `spawn`, the branch runs in a Task of its own, with a workspace of its own. Two branches therefore never see each other's files. The spawner does this in two steps. `Place` creates a child Task, as a spawn does, and returns its member name at once. The kernel records the branch as a queued run with `Member` set and answers the call. The start goes on in the background. `Branch` waits until the child Task runs and sends the kept events to `POST /v1/runs/fork` of the child, under the id of the request. A Task that does not run, or that does not take the branch, is deleted.
 
-Until the events of the child arrive, the view shows the branch under the source member as a queued run. A request for it goes to the source Task, which answers for it. The lab needs this: agentgateway lets a request wait ten seconds, and a Task takes longer to boot. The fork call therefore answers with the queued stub, and the client follows it with `run_status`. A branch is a run of its own. It shares no budget and no count with the tree of its source. It is no job, so it gets no retry and no dead letter. Branches are in [4.7 Branches](../design/kernel-architecture.md#47-branches).
+Until the events of the child arrive, the view shows the branch under the source member as a queued run. A request for it goes to the source Task, which answers for it. A gateway makes this necessary: agentgateway lets a request wait ten seconds, and a Task takes longer to boot. The fork call therefore answers with the queued stub, and the client follows it with `run_status`. A branch is a run of its own. It shares no budget and no count with the tree of its source. It is no job, so it gets no retry and no dead letter. Branches are in [4.7 Branches](../design/kernel-architecture.md#47-branches).
 
 ## Pools
 
@@ -248,7 +248,3 @@ A team is a group of people and agents that work together. The teams of a person
 - `featherweight-kernel/bus/nats/nats.go`
 - `featherweight-kernel/tools/builtin/child.go`
 - `featherweight-kernel/surface/view/status.go`
-- `featherweight-lab/e2e/README.md`
-- `featherweight-lab/e2e/fleet/fw.yaml`
-- `featherweight-lab/e2e/fleet/ax/run.sh`
-- `featherweight-lab/e2e/fleet/fork.py`

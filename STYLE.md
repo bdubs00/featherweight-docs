@@ -4,8 +4,8 @@ Every page follows these rules. A subagent that writes a page reads this file fi
 
 ## Truth
 
-1. Every fact comes from the source code or the documents of the three repositories next to this one: `../featherweight-kernel`, `../featherweight-workbench`, `../featherweight-lab`. Do not invent a flag, a key, a route, a tool, a default, or a step.
-2. Before you name a command, a flag, a configuration key, an environment variable, a route, or an MCP tool, find it in the code. For the kernel verbs, read `cli/*.go` and `cmd/fw/*.go`. For the configuration keys, read `examples/fw.yaml` and `config/`. For the workbench, read `cmd/fw-workbench/*.go`, the packages, and `examples/`. For the lab, read the scripts.
+1. Every fact comes from the source code or the documents of the two repositories next to this one: `../featherweight-kernel` and `../featherweight-workbench`. Do not invent a flag, a key, a route, a tool, a default, or a step.
+2. Before you name a command, a flag, a configuration key, an environment variable, a route, or an MCP tool, find it in the code. For the kernel verbs, read `cli/*.go` and `cmd/fw/*.go`. For the configuration keys, read `examples/fw.yaml` and `config/`. For the workbench, read `cmd/fw-workbench/*.go`, the packages, and `examples/`.
 3. If a document and the code disagree, the code wins. Say so in one sentence.
 4. If you cannot verify a claim, leave it out, or mark it `(unverified)` in the text.
 5. End every page with a `## Sources` section: a list of the files you read, as paths relative to the repository root, for example `featherweight-kernel/cli/serve.go`.
