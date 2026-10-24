@@ -69,31 +69,35 @@ Every event is a CloudEvents 1.0 JSON object. CloudEvents is a CNCF standard env
 
 | Type | Data |
 |---|---|
-| `fw.run.queued` | agent, input, instructions, inline profile, budget, metadata, origin, principal and its kind, parent, depth, file references (section 7.10), extra tools (section 12.5), resolved profile (section 12.5), kept events of a branch (section 4.7) |
-| `fw.run.started` | model, tool names, brief (the sections that tools add to the system prompt), context (the data that tools add to the first user message, section 7.8.2), time zone |
+| `fw.run.queued` | agent, input, instructions, inline profile, budget, metadata, origin, principal and its kind, parent, depth, file references (section 7.10), extra tools (section 12.5), resolved profile (section 12.5), kept events of a branch (section 4.7), the check of a check run (section 23) |
+| `fw.run.started` | model (none for a check run, section 23), tool names, brief (the sections that tools add to the system prompt), context (the data that tools add to the first user message, section 7.8.2), time zone |
 | `fw.memory.changed` | one change of a memory note by a tool call: call id, tool, operation, ref, old ref, scope, agent, size, SHA-256; never the text (section 7.8.1) |
 | `fw.run.annotated` | metadata, usage, provider, model (section 8.2), or a trusted quality receipt with its own cost snapshot (section 10.1) |
-| `fw.message.received` | role, content, origin (`http`, `a2a`, `mcp`, `bus`, `cli`, `kernel`), note kind, and for a budget note what it is about: the limit, the threshold, the use, the limit value, and the run that holds the limit, or `changed` (section 5.2) |
+| `fw.run.reacted` | the reaction of a person on an event of the run: `seq`, the event, `0` for the run as a whole; `reaction`, `up`, `down`, or `heart`; `by`, the subject of the person; `note`, at most 1 KB; and `receipt`, true when a thumb also recorded a quality receipt (sections 8.2 and 10.1) |
+| `fw.message.received` | role, content, origin (`http`, `a2a`, `mcp`, `bus`, `cli`, `kernel`), note kind, and for a budget note what it is about: the limit, the threshold, the use, the limit value, and the run that holds the limit, or `changed` (section 5.2); `by`, the subject of the principal that sent the message, and `from`, the party that a trusted caller relays the message for: kind (`person` or `agent`), name, run, and member (section 5.5); `pinned` for a message that every compaction keeps (section 5.4) |
 | `fw.turn.started` | turn number |
-| `fw.model.requested` | provider, model, effort (`default` when the provider chooses it, section 6.1), estimated input tokens, and `report` for the final report call at a limit (section 5.2) |
+| `fw.model.requested` | provider, model, effort (`default` when the provider chooses it, section 6.1), estimated input tokens, and `report` for the final report call at a limit (section 5.2). `systemNotes` names the sentences of the kernel at the end of the system prompt, in their order. `context` stands for `fw.ContextNote` (section 7.8.2), and `message` for `fw.MessageNote` (section 5.5). It holds the names only, never the text of the prompt. A hosted harness records no `systemNotes`. |
 | `fw.model.responded` | content blocks, raw provider blocks, stop reason, usage, latency |
-| `fw.tool.requested` | tool, call id, input, idempotent classification at invocation |
+| `fw.tool.requested` | tool, call id, input, idempotent classification at invocation, and `routine` for a call of the routine runner (section 22.3) |
 | `fw.tool.responded` | call id, output, `is_error`, latency |
 | `fw.tool.progress` | call id, progress, total, message |
 | `fw.file.changed` | call id, tool, operation, path, old path, size, SHA-256 (section 7.9) |
 | `fw.run.child` | child, member, `started`, and for a child whose start is open its kind (`spawn` or `branch`) and its facts: person, metadata, profile name, input, idempotency key, and the runs of the tree that it reserved; for a start that ended without a child for its caller, the outcome and the reason; and why a look kept a child that can still run (sections 4.7 and 11.9) |
 | `fw.child.reported` | child, member, state, the usage of the tree of the child, its open runs and its working runs, and `lost` when the parent no longer reaches it: what a child in another process last reported (section 11.9) |
 | `fw.approval.requested` | approval id, tool, call id, input, reason, form schema of a question, connect request (section 7.11) |
-| `fw.approval.decided` | approval id, decision, decider, note |
+| `fw.approval.decided` | approval id, decision, decider (the subject of the caller, or the person that a trusted relay names, section 8.2), `deciderKind`, the kind of the decider (section 10.2), note |
 | `fw.context.compacted` | epoch, summary block, kept messages, usage of the summary calls |
 | `fw.budget.exceeded` | limit name, value, the limit, for a limit of a tree the scope `tree` and the run whose budget holds it, and `report` when the final report call follows (section 5.2) |
-| `fw.budget.changed` | the fields of the budget that the change sets, the subject of the person who changed it, origin (section 5.2) |
+| `fw.budget.changed` | the fields of the budget that the change sets, the subject of the person who changed it, `byKind`, the kind of that person (section 10.2), origin (section 5.2) |
 | `fw.loop.detected` | tool, count, period, action (`warned`, `failed`) |
 | `fw.error` | message, retryable |
 | `fw.turn.finished` | turn number |
 | `fw.run.suspended` | reason, totals (the usage of the run so far, section 8.2) |
 | `fw.run.resumed` | from seq |
-| `fw.run.finished` | outcome (`completed`, `failed`, `canceled`), output, error, totals (the usage of the run so far, section 8.2) |
+| `fw.run.finished` | outcome (`completed`, `failed`, `canceled`), output, error, totals (the usage of the run so far, section 8.2). A cancel adds `by`, who canceled the run (section 8.2). |
+| `fw.routine.decided` | the decision on one routine at the start of a run: routine, version, standing, and mode (`shadow`, `live`, or `canary`). Then `applies`, the reason, the answers of the decider, the decider, the model, and the latency (section 22.3) |
+| `fw.routine.applied` | a live routine that ran: routine, version, `ok`, the steps that ran, the failed step, the reason, and the answer of a routine that completed (section 22.3) |
+| `fw.routine.compared` | the end of a run that the model completed: routine, version, mode, question, what the routine said, what the agent did, and `agree` (section 22.3) |
 | `fw.outcome.evaluated` | verdict (`satisfied`, `needs_revision`, `max_iterations`, `unparsed`, `skipped`), notes, iteration, iterations, the grader run, whether the loop continues, reason (section 20) |
 | `fw.harness.event` | kind and a compact payload of one event of a hosted harness, with the markers of its session (section 19) |
 | `fw.env.ready`, `fw.env.failed`, `fw.env.changed` | the state of the environment of the durable volume: the digest, the versions, the time, or the failed step and its output. These belong to the agent, not to a run, so they go to the bus subject `fw.environment` and to the log, not to a ledger (section 18) |
@@ -113,7 +117,7 @@ The model builds its history from the stored events, so the model does not see t
 The default ledger driver writes one file per run at `$FW_HOME/runs/<run>/ledger.jsonl`. JSONL is one JSON object per line. It calls `fsync` before acknowledging each of these events:
 
 - `fw.run.queued`, for every origin, including HTTP and the command line
-- external `fw.message.received`, `fw.budget.changed`, and `fw.run.annotated`
+- external `fw.message.received`, `fw.budget.changed`, `fw.run.annotated`, and `fw.run.reacted`
 - every approval event, every terminal event, and every `fw.run.child`
 - every `fw.tool.requested` that does not explicitly record `idempotent: true`
 
@@ -165,7 +169,7 @@ A recorded result matches the tool name and its JSON input. Object key order and
 
 ### 4.7 Branches
 
-A run is defined by its ledger and its workspace, so a run can branch. `Agent.Fork` and `POST /v1/runs/{id}/fork` make a new run whose ledger begins with a copy of the events of the source up to one sequence number, `seq`; without one, every event. The copied events get the id of the branch, new event ids, and the time of the copy; the `fw.run.queued` event of the branch names the person who branched as its principal and carries the metadata `fw.forkOf`, the id of the source, and `fw.forkSeq`, the sequence number kept. The metadata of the source, with the annotations that the branch keeps, and the metadata of the request must fit the bounds of `fw.CheckMetadata` together; otherwise the kernel refuses the branch, here and in a process that takes it through `POST /v1/runs/fork`. The branch starts from `fw.run.queued` as the ledger of the source stores it, with every secret replaced, so its model reads what the model of the source read, and a branch in another process holds no secret that only the source knows. The branch has no parent, and the children of the source stay with the source. The source does not change.
+A run is defined by its ledger and its workspace, so a run can branch. `Agent.Fork` and `POST /v1/runs/{id}/fork` make a new run whose ledger begins with a copy of the events of the source up to one sequence number, `seq`; without one, every event. The copied events get the id of the branch, new event ids, and the time of the copy; the `fw.run.queued` event of the branch names the person who branched as its principal and carries the metadata `fw.forkOf`, the id of the source, and `fw.forkSeq`, the sequence number kept. A trusted relay that branches for a person names that person (section 8.2). The branch then belongs to that person, with the kind `user`. The metadata of the source, with the annotations that the branch keeps, and the metadata of the request must fit the bounds of `fw.CheckMetadata` together; otherwise the kernel refuses the branch, here and in a process that takes it through `POST /v1/runs/fork`. The branch starts from `fw.run.queued` as the ledger of the source stores it, with every secret replaced, so its model reads what the model of the source read, and a branch in another process holds no secret that only the source knows. The branch has no parent, and the children of the source stay with the source. The source does not change.
 
 A branch counts its own work only. Its `fw.run.queued` holds `kept`, the number of events at the start of its ledger that are copies, which leaves out the `fw.run.child` events of the source. The copies add nothing to the usage of the branch, and their totals set nothing (section 8.2), because the source holds that usage. A branch that its copies end, such as a branch of a finished run without a message, did no work: a copy after which the branch is finished, such as the copied `fw.run.finished`, gives it a known usage of zero, so a consumer of the lifecycle events reads it as final (`usageSeq`), even when the last copy is an event that the stream does not carry. The budget of the branch counts its own turns, tool calls, tokens, and cost in the same way, so a branch of a run near a limit gets the whole budget for its own work. A turn that is open at the end of the copies, as in a branch at a `fw.model.requested`, is a turn of the branch, because the branch makes its model call. The turn numbers in the ledger of the branch go on from the source. Only a fork sets `kept`: the process that writes the branch sets it to the number of the copies, also for a branch that `POST /v1/runs/fork` brings from another process, so a `kept` in that body counts for nothing, and the metadata `fw.forkOf` and `fw.forkSeq`, which a request can set and a replay copies, change no count. A branch that an older kernel made has no `kept` and counts the copies as its own.
 
@@ -173,7 +177,7 @@ The copy of the kept events is the acceptance of a branch in this process: a cal
 
 A branch goes on as a resumed run does (section 4.5). A model request without an answer is sent again, a tool call without a result follows the resume rules, and a pending approval waits for its decision, under the approval id that the branch copied. A message in the request, `input`, follows the kept events as a follow-up from the person, so a branch of a finished run goes on in another direction; without a message, a branch that keeps the end of a finished run stays finished. The branch keeps the resolved profile of its source (section 12.5), because it copies the `fw.run.queued` event of the source, so a change of the profile after the start of the source does not reach the branch. A branch in this process also keeps the text of the profile of its source; a branch in another process takes the text of the profile there and records a change of it as a restart does (section 12.5). A `model` in the request changes the model of the branch: it replaces the model in the resolved profile and in the inline profile. Because the system prompt, the history, and the tool results of the kept events are the same bytes, the branch keeps the prompt cache prefix of the provider up to the point of the branch.
 
-A branch in this process shares the workspace of its process, and with `tools.files.perRun` it works in the directory of its source (section 7.9). The source and its branches in the same process therefore see each other's changes. With `spawn` in the request, the branch runs in another process: the `Spawner` of the agent must be a `Forker`. A `Forker` works in two steps, because the other process takes a while to run and the caller does not wait for it. `Place` creates the process, a child Task with the `ax` driver, and names it at once. The kernel then gives the branch its id, records it in the source as a child in `fw.run.child` with that member, and answers the caller with the branch as queued, with `Member` set; the route answers 202. `Branch` runs in the background: once the process runs, it sends the kept events through `POST /v1/runs/fork`, a route for the static token or a workload alone, because the events name the person of the branch, and the process takes the branch under the id that the body names. Until then the source answers `Get` for the branch, `WaitFor` waits for the start, `Decide` has nothing to decide, and `Cancel` ends the start. The status of the source is not idle while a start is open (`Agent.Starting`), so the suspend controller of the workbench does not put it to sleep before its child has the branch. The source records the branch twice in `fw.run.child`: when it places the branch, with the person and the metadata of the branch, and again once the process took it, with `started`. If the source process goes away during the start, nothing sends the branch, so at its next start the source records a placed branch without a start as a failed run with the reason, from the facts in the event, and the `Forker` abandons the process it placed: the `ax` driver deletes the empty child Task. A shutdown of the source ends every open start the same way, as canceled. A branch is therefore never lost without a trace, and nothing of it stays behind in the fleet. A branch that its process does not take, because the Task never runs or refuses the events, and a branch whose start was canceled are recorded in the source process under the id of the branch, as a failed run with the reason or as a canceled run, so nothing is lost without a trace; after a restart that record wins over the `fw.run.child` event. The `ax` driver deletes a child Task that did not take its branch. The branch has the workspace of its own Task: a fresh copy of the Workspace of the parent Task, not the files that the parent changed. Several branches of one run in several Tasks therefore try different prompts or models from the same base, and their `fw.file.changed` events and their outputs compare.
+A branch in this process shares the workspace of its process, and with `tools.files.perRun` it works in the directory of its source (section 7.9). The source and its branches in the same process therefore see each other's changes. With `spawn` in the request, the branch runs in another process: the `Spawner` of the agent must be a `Forker`. A `Forker` works in two steps, because the other process takes a while to run and the caller does not wait for it. `Place` creates the process, a child Task with the `ax` driver, and names it at once. The kernel then gives the branch its id, records it in the source as a child in `fw.run.child` with that member, and answers the caller with the branch as queued, with `Member` set; the route answers 202. `Branch` runs in the background: once the process runs, it sends the kept events through `POST /v1/runs/fork`, a route for the static token or a workload alone, because the events name the person of the branch, and the process takes the branch under the id that the body names. Until then the source answers `Get` for the branch, `WaitFor` waits for the start, `Decide` has nothing to decide, and `Cancel` ends the start. The status of the source is not idle while a start is open (`Agent.Starting`), so the suspend controller of the workbench does not put it to sleep before its child has the branch. The source records the branch twice in `fw.run.child`: when it places the branch, with the person and the metadata of the branch, and again once the process took it, with `started`. If the source process goes away during the start, nothing sends the branch, so at its next start the source records a placed branch without a start as a failed run with the reason, from the facts in the event, and the `Forker` abandons the process it placed: the `ax` driver deletes the empty child Task. The start of the kernel does both before it goes on, the abandon first, so a restart between the two abandons again. A failed abandon is tried again, five times in all, with a wait that starts at one second and doubles, for at most 30 seconds, because under ax a Task boots before its egress policy takes effect. A process that the kernel still cannot remove is named in the reason of the record. A shutdown of the source ends every open start the same way, as canceled. A branch is therefore never lost without a trace, and nothing of it stays behind in the fleet. A branch that its process does not take, because the Task never runs or refuses the events, and a branch whose start was canceled are recorded in the source process under the id of the branch, as a failed run with the reason or as a canceled run, so nothing is lost without a trace; after a restart that record wins over the `fw.run.child` event. The `ax` driver deletes a child Task that did not take its branch. The branch has the workspace of its own Task: a fresh copy of the Workspace of the parent Task, not the files that the parent changed. Several branches of one run in several Tasks therefore try different prompts or models from the same base, and their `fw.file.changed` events and their outputs compare.
 
 ## 5. The kernel
 
@@ -191,6 +195,8 @@ A run is one conversation with one agent profile, one budget, and one ledger. Th
 Other stop reasons end the turn as follows. `max_tokens` appends `fw.error` and retries once with a continuation message. `refusal` appends `fw.run.finished` with outcome `failed` and the refusal category. `pause_turn` goes to step 1 at once.
 
 A stream that the network cuts in step 2 has no answer. An adapter marks such a cut with `fw.StreamInterruptedError`: the body ended before a finish reason, in the middle of an event, or with a reset. The kernel then appends `fw.error` with `retryable` set, waits half a second, and calls the model once more with the same request, in the same turn and the same run. It records nothing of the cut response and runs none of its tool calls, even a tool call that arrived whole. A second cut fails the run. The deadline of the budget and a cancel bound both calls and the wait. A suspend of an ax Task cuts the network of the process before it freezes it, so the call meets the cut first and the retry carries the run over the suspend. Any other model error fails the run as before.
+
+The text of an answer also goes out live while the model produces it. The adapters stream from the provider in step 2, and the turn loop hands each text piece of the answer and each tool call to a small fan-out of the run, which `GET /v1/runs/{id}/live` serves (section 8.2). The thinking of a provider never goes out, only the text of the answer. A run takes at most 16 live clients. The fan-out joins the pieces to at most one event per 40 ms, and it drops a client that falls 64 events behind. Nothing of it enters the ledger, which records the answer whole in `fw.model.responded`, so a client that connects in the middle of a call gets the pieces from then on and no replay. A run that nobody watches pays one atomic load per piece.
 
 The execution cursor consumes new ledger events incrementally. A cold load reconstructs it once; later steps decode only events after its last boundary. Driver snapshots detach mutable call and report records, so a concurrent budget check can advance the cursor safely. The repeat guard keeps exact counts for periods of one to three calls in constant space. The ledger remains authoritative and retains all events. Context compaction bounds the model history, not the ledger; startup still reads historical runs, and an open run still holds its event history.
 
@@ -244,7 +250,7 @@ The kernel checks the budget before a model call, so a slow call can run long pa
 
 #### A change of the budget
 
-A run keeps the budget that it was queued with until a person changes it. `Agent.ChangeBudget` and `PATCH /v1/runs/{id}/budget` change the budget of a run. `Agent.Send` with `fw.WithSendBudget`, or the field `budget` of `POST /v1/runs/{id}/messages`, changes it together with a follow-up, before the message, so the turn that the message starts has the new limits. Each field that the change sets replaces the same field of the budget of the run for the work that follows; a zero field keeps the field as it was. The kernel records each change as `fw.budget.changed` with the fields, the subject of the person, and the origin. The budget of the run is the budget that it was queued with, with every change on top, in order, after a restart and in a branch too. A change needs the operator role on the run, as a decision does (section 13.2). A change of a finished run leaves it finished, and a follow-up starts it with the new budget.
+A run keeps the budget that it was queued with until a person changes it. `Agent.ChangeBudget` and `PATCH /v1/runs/{id}/budget` change the budget of a run. `Agent.Send` with `fw.WithSendBudget`, or the field `budget` of `POST /v1/runs/{id}/messages`, changes it together with a follow-up, before the message, so the turn that the message starts has the new limits. Each field that the change sets replaces the same field of the budget of the run for the work that follows; a zero field keeps the field as it was. The kernel records each change as `fw.budget.changed` with the fields, the subject of the person, and the origin. A trusted relay names that person (section 8.2). The budget of the run is the budget that it was queued with, with every change on top, in order, after a restart and in a branch too. A change needs the operator role on the run, as a decision does (section 13.2). A change of a finished run leaves it finished, and a follow-up starts it with the new budget.
 
 Every limit counts the whole run. The turns, the tool calls, the tokens, the cost, and the working time before the change count against the new limits. A run that failed after 45 minutes of work at a deadline of 45 minutes therefore gets 30 more minutes from `deadline: 75m`, not 75. A running run reads the new budget at its next check. Its next model call carries a budget note that lists the limits now and the use of each, so a model that a 90% note told to wrap up learns that it can go on. The budget of the parent of a child still caps the child. The parent of a child in another process refuses a change of the child with a 400 that names the process; change the budget in that process.
 
@@ -264,7 +270,7 @@ The check is live, not a reservation, so a tree can pass a limit by a bounded am
 
 ### 5.3 Approvals
 
-A tool call that the policy marks `Ask` moves the run to the state `input-required`. The kernel appends `fw.approval.requested`. Every surface shows the pending approval, and every surface accepts a decision. A decision appends `fw.approval.decided`, and the run continues. Approvals survive a restart and a suspend because they are ledger events.
+A tool call that the policy marks `Ask` moves the run to the state `input-required`. The kernel appends `fw.approval.requested`. Every surface shows the pending approval, and every surface accepts a decision. A decision appends `fw.approval.decided`, and the run continues. The event names the decider: the subject of the caller, or the person that a trusted relay names (section 8.2). Approvals survive a restart and a suspend because they are ledger events.
 
 ### 5.4 Context management
 
@@ -272,21 +278,47 @@ Long runs outgrow the context window of the model. The `Compactor` interface han
 
 Before each model call, the kernel estimates the size of the context. It starts from the usage that the provider reported for the latest response of the epoch: input, cache read, cache write, and output tokens. It adds an estimate for the messages after that response, about one token per four bytes of text and 1,600 tokens per image. Without a reported usage, the estimate covers the system prompt, the tool specifications, and the whole history.
 
-When the estimate reaches `compaction.at`, the kernel compacts before the call. The default is 150,000 tokens.
+When the estimate reaches `compaction.at`, the kernel compacts before the call. The default is 262,144 tokens.
 
-A model call can also fail because the request does not fit the context window. Then the kernel compacts and calls the model once more in the same turn. A second overflow in the same turn fails the run. The kernel recognizes an overflow from `fw.ErrContextOverflow`, or from the error text of Anthropic, OpenAI, Gemini, vLLM, llama.cpp, and tabbyAPI. A local server with a small window therefore needs no setting. `compaction.at: 0` turns compaction off in both cases.
+A profile can set its own block `compaction` with three fields, so one agent with a small model compacts early and another one never compacts:
+
+| Field | Meaning |
+|---|---|
+| `at` | The size in estimated tokens that starts a compaction for the runs of the profile. 0 takes `compaction.at` of the configuration. A negative value is invalid. |
+| `model` | A selector or a name from `models` for the summary call, resolved as the grader of an outcome (section 20.1). Empty takes `compaction.model`. |
+| `off` | `true` turns compaction off for the runs of the profile, before a call and after an overflow. It does not go together with `at`. |
+
+The block `compaction` of the configuration takes `off` too, and there `at: 0` turns compaction off as well. The inline profile of a request overlays the block as it overlays a budget: a set field replaces. The kernel resolves the setting when it queues the run and records it in the resolved profile of `fw.run.queued` (section 12.5): the size, `off`, and the model as a selector. A run therefore keeps its compaction setting for its life, and a change of the profile or of the configuration reaches new runs only. A run from the ledger of an older kernel reads the block of the configuration. `Agent.CheckProfile` and the loader of the configuration refuse a bad value and name the key, such as `compaction.at`.
+
+A model call can also fail because the request does not fit the context window. Then the kernel compacts and calls the model once more in the same turn. A second overflow in the same turn fails the run. The kernel recognizes an overflow from `fw.ErrContextOverflow`, or from the error text of Anthropic, OpenAI, Gemini, vLLM, llama.cpp, and tabbyAPI. A local server with a small window therefore needs no setting. `compaction.at: 0`, `compaction.off: true`, and `off: true` in the block of a profile turn compaction off in both cases.
 
 The default compactor uses simple compaction. It sends the history of the run to the model with the same system prompt, tools, and effort as a turn. It adds one user message. That message asks for a summary inside `<summary>` tags and forbids tool calls. The prefix of the call is the prefix of a turn. The call therefore reads the prompt cache, and the thinking blocks in the history stay valid.
 
-The summary replaces the whole history. The new epoch starts with one user message that holds the summary. The kernel replays no earlier response, no tool call, and no thinking block. The reason is that a provider binds a thinking block to the history before it. A kept tail of old turns therefore fails after a summary. Anthropic rejects such a request with a 400 for accounts created on or after 2026-08-31. The messages from the caller at the end of the history, such as a new question, carry no provider data. They follow the summary word for word.
+The summary replaces the whole history. The new epoch starts with one user message that holds the summary. Each pinned message of the run follows it (section 5.5), in ledger order and verbatim, then the messages from the caller that the compactor kept, then the messages that arrived during the summary call. A pinned message is never summarized away, and each compaction keeps it once: a pinned message that the compactor also kept from the caller tail moves to the pinned messages and is not kept twice. A pinned message that arrives during the summary call follows as any message that arrives then. The kernel replays no earlier response, no tool call, and no thinking block. The reason is that a provider binds a thinking block to the history before it. A kept tail of old turns therefore fails after a summary. Anthropic rejects such a request with a 400 for accounts created on or after 2026-08-31. The messages from the caller at the end of the history, such as a new question, carry no provider data. They follow the summary word for word.
 
-When the summary call itself does not fit, the compactor summarizes the history up to the last assistant message. That part was the history of an earlier call that fit. The compactor appends the remaining messages after the summary as plain text, and cuts each block to 4,000 characters. `compaction.model` sends the summary call to another model, which does not read the prompt cache of the run. A message that arrives during the summary call follows the summary in the new epoch.
+When the summary call itself does not fit, the compactor summarizes the history up to the last assistant message. That part was the history of an earlier call that fit. The compactor appends the remaining messages after the summary as plain text, and cuts each block to 4,000 characters. `compaction.model`, or `model` of the block of the profile, sends the summary call to another model, which does not read the prompt cache of the run. A message that arrives during the summary call follows the summary in the new epoch.
 
-Compaction appends `fw.context.compacted` with a new epoch number, the summary block, the messages that the compactor kept, and the token usage of the summary calls. The usage, the cost, and the budget of the run count that usage. The `messages` projection starts from the latest epoch. The system prompt is not part of the history, so the profile prompt and the skills list survive every compaction. The data that tools add to the first user message, such as the memory index, comes back at the start of the first message after the summary (section 7.8.2). The ledger before the epoch is unchanged, so rule 5 holds.
+Compaction appends `fw.context.compacted` with a new epoch number, the summary block, the messages that the compactor kept, the pinned messages among them, and the token usage of the summary calls. The usage, the cost, and the budget of the run count that usage. The `messages` projection starts from the latest epoch. The system prompt is not part of the history, so the profile prompt and the skills list survive every compaction. The data that tools add to the first user message, such as the memory index, comes back at the start of the first message after the summary (section 7.8.2). The ledger before the epoch is unchanged, so rule 5 holds.
 
 ### 5.5 Follow-up messages
 
 A run accepts more messages after it finishes or while it waits for input. A follow-up appends `fw.message.received` and starts a new turn on the same run. The mailbox serializes follow-ups, so a run never has two writers. A follow-up can carry a budget, which changes the budget of the run before the message (section 5.2), so a person continues a run that failed at a limit with more room. A follow-up without one to a run that is still over a limit fails again at once.
+
+A follow-up that arrives while the model answers enters the history after that answer. A follow-up that arrives while tool calls run follows their results. So the next request ends with the message, also after a restart, because the history is a function of the ledger. A call that never answers leaves the message for the next request, at the end. A provider takes a request that ends with an answer of the model as a prefill. Newer models, such as Claude 5.5, refuse a prefill with a 400. The kernel sends such a request only to continue a paused turn (`pause_turn`). For any other request that ends with an answer, the kernel fails the run with that reason before the call.
+
+A follow-up can be pinned, with `fw.WithMessagePinned` or the field `pinned` of the route. A pinned message survives every compaction: the new epoch holds it verbatim after the summary (section 5.4). An operator hands a skill or a standing instruction into a running conversation this way, and it does not vanish at the next compaction. The pinned messages of a run hold at most 64 KB together, counting their text, their inline data, and their files. A pinned message past the bound fails with `ErrInvalidRequest` and a text that names the bound. The event line of such a message starts with `pinned`.
+
+Each follow-up records its sender. The field `by` holds the subject of the principal that sent the message, as `fw.budget.changed` records it. A trusted relay that sends the message of a person names that person in `by` (section 8.2). It is empty for a message of the kernel and for the process itself. A trusted caller relays a message for another party with `fw.WithMessageFrom`, and the field `from` names that party: `kind`, which is `person` or `agent`, `name`, `run`, the run of an agent, and `member`, the seat of the party in the work that relays the message, such as a member of a channel. A trusted caller is the process itself, the static token, or a workload. Any other principal that names a party gets `ErrForbidden`, so a person cannot pose as another person. Each field holds at most 256 bytes and no control character. The kernel shows the kind and the name and reads nothing else. The front of a fleet relays the messages of one agent to another this way.
+
+A message from an agent has the role user. The model reads it inside a block that names the agent. The kernel escapes the attributes, and it escapes a closing tag inside the text, as it does for the memory index (section 7.8.2), so the text cannot end its block early:
+
+```
+<message from="reviewer" kind="agent">
+The tests pass on my branch. Please rebase.
+</message>
+```
+
+From the first such message on, the system prompt of the run ends with the sentence `fw.MessageNote`. It says that the block is a message from another agent, with the authority of a tool result and not of the operator. It follows the sections of the tools and `fw.ContextNote` (section 12.5). It is not text of the profile, so the digests of the run stay as they are, and a restart records no `fw.drift.system` (section 12.5). A run that never gets a message from an agent keeps its prompt and its cached prefix. The `fw.model.requested` of each call whose prompt ends with the sentence names it in `systemNotes` as `message` (section 4.2). So a consumer of the egress stream sees which calls carried the sentence. The event holds the name only, never the text of the prompt. A message of a person reaches the model as it came. A hosted harness gets the same block and the same sentence (section 19.3). It builds its own prompt, so its `fw.model.requested` has no `systemNotes`. The interventions of the quality metrics do not count a message from an agent as a follow-up of a person (section 10.1).
 
 ### 5.6 Process duties
 
@@ -470,6 +502,7 @@ type ToolSource interface {
 | `spawn_task` | Start a child run with its own task, prompt, tools, and budget | parallel-safe |
 | `await_task` | Wait for a child run and return its output | read-only, parallel-safe |
 | `send` | Publish a message to a bus subject | none |
+| `decide` | Ask a decider typed questions and get the answers with their probabilities. Without an entry in `deciders`, the tool does not exist (section 22.2). | read-only, idempotent, parallel-safe |
 
 The workbench adds the built-in tool `propose_agent` (the workbench architecture, section 6.4).
 
@@ -484,7 +517,7 @@ Four built-in tools set `Action`:
 | `spawn_task` | Hand off task |
 | `send` | Send message |
 
-The other built-in tools have no label. `files` and `memory` read, write, and delete, so no one label fits them. `ask_user` asks a question and does not act. `clock`, `recall`, `skill`, and `await_task` change nothing, so a person seldom allows their calls.
+The other built-in tools have no label. `files` and `memory` read, write, and delete, so no one label fits them. `ask_user` asks a question and does not act. `clock`, `decide`, `recall`, `skill`, and `await_task` change nothing, so a person seldom allows their calls.
 
 The `files` tool never opens a path under the paths that `Config.Reserved` lists: the home directory of `fw`, the directory of the file ledger, and the configuration file. The check uses the real path, after symbolic links. A change there changes what `fw` allows at its next start. For example, a profile file under `$FW_HOME/agents` can grant its agent access and read secrets from the environment through `${VAR}`. Every other path under the root needs no approval, except the paths that the rules of the workspace refuse (section 7.9).
 
@@ -510,7 +543,8 @@ Each HTTP server entry has these fields:
 | `auth.oauth` | OAuth 2.1 client fields: `clientId`, `clientSecret`, `scopes`, and `grant`, which says whose authority a call carries (section 7.11) | none |
 | `headers` | Extra headers on every request. Values resolve through `Secrets`. | none |
 | `timeout` | Time limit per call | `60s` |
-| `trusted` | Treat the tool annotations and titles of this server as true. A title becomes the label of the button that allows a call. | `false` |
+| `skills` | Where the skills of the server come from: `auto`, a list of the URIs of `SKILL.md` resources that the operator pins, or `off` (see Skills of a server) | `auto` |
+| `trusted` | Treat the tool annotations and titles of this server as true. A title becomes the label of the button that allows a call. Each call also names the person of the run in `_meta` (see The run behind a call). | `false` |
 
 Use `https://` for every endpoint outside the cluster. `fw` logs a warning at start for an `http://` endpoint whose host is not a loopback address or a cluster-local name.
 
@@ -544,6 +578,33 @@ A result with `resultType: "input_required"` means the server needs something be
 
 A result with `resultType: "task"` needs the extension `io.modelcontextprotocol/tasks` in the capabilities that `fw` declared. `fw` stores the `taskId` in the `fw.tool.requested` data, polls `tasks/get` at `pollIntervalMs`, and answers `input_required` through `tasks/update`. If the run is canceled, `fw` sends `tasks/cancel`. A resumed run continues polling from the stored task id. This is how a long upstream tool survives a suspend and a resume.
 
+#### Skills of a server
+
+A server can serve skills through the MCP extension `io.modelcontextprotocol/skills` (SEP-2640, on base revision 2026-07-28). It declares the extension in its capabilities. `skills/list` lists the skills: the URI of each, its front matter, and its files with the digest `sha256:...` and the size of each, or `dynamic` for a skill whose files the server lists on demand. The files are resources that `resources/read` returns. The kernel declares the extension on its side and handles these values of `skills` of an entry:
+
+| Value | The kernel |
+|---|---|
+| `auto`, the default | lists the skills with `skills/list` when the server declares the extension. A server that declares it and refuses the method with -32601, or a 404 on revision 2026-07-28, as agentgateway does, is remembered as one that does not answer it. |
+| a list of `SKILL.md` URIs | pins those skills. The kernel reads each one with `resources/read`, takes the name and the description from its front matter, and computes its digest itself. Use it for a server behind a gateway that refuses the method. With `auto` in the list, the kernel tries `skills/list` first and takes the pins when the server does not declare the extension, does not answer the method, or fails. |
+| `off` | reads no skill of the server |
+
+Each skill of a server joins the skills of the agent with the origin `mcp`, the entry name of the server, and the URI of its `SKILL.md`. Its name is `<server>/<name>`, such as `github/review`, so a skill of a server never shadows a skill of the skill directories, and the allowlist `skills` of a profile matches local names and qualified names alike: `github/*` allows every skill of one server. A name that the server lists twice keeps its first entry. The line of the skill in the system prompt names the server: `- github/review: Review a pull request (from the MCP server github)`. A server that acts for the person of a run (section 7.11) gives no skills, because the list must not depend on the person.
+
+The kernel reads the list when the process starts, again when the server sends `notifications/resources/list_changed`, and again when the `ttlMs` of the listing passes. A server that is down keeps its last list, the log says so, and the kernel tries again after 30 seconds. The kernel reads no file of a skill ahead of need. The `skill` tool reads `SKILL.md` of a server skill at the moment of use with `resources/read`, and its field `file` reads a supporting file the same way, so a model reads a reference file of a server skill as it reads one of a local skill. Before it uses a file, the kernel checks its size and its digest against the listing, or, for a pinned skill and a file that the listing does not name, against its own first read, and it checks that the name in the front matter of `SKILL.md` is the name of the listing. A mismatch refuses the file with the reason, and nothing of it reaches the model. A file holds at most 4 MB, and the tool limits of section 7.7 bound the result. A path that leaves the skill, an absolute path, and a hidden file are refused. The tool reads only a skill that the profile of the run allows. `GET /v1/skills` lists the skills of the servers with their origin and their URI. `fw doctor` names, for each server, how many skills it gives and whether it answers `skills/list` or needs a pinned list. `recall` matches a skill of a server by its name and its description only.
+
+#### The run behind a call
+
+Every `tools/call` of a run carries the run in `_meta`, next to the keys that the revision requires:
+
+| Key | Value |
+|---|---|
+| `io.featherweight/run` | The id of the run |
+| `io.featherweight/agent` | The name of the profile of the run |
+| `io.featherweight/node` | The name of the process, from the key `node` of the configuration, as the egress stream carries it (section 9.4) |
+| `io.featherweight/principal`, `io.featherweight/principalKind` | The subject and the kind of the person of the run. Only a server with `trusted: true` gets them. |
+
+A call without a run, such as a call of a Go caller outside the turn loop, carries none of these keys. A run without a principal carries no principal keys. A server, such as the MCP server of the front of a fleet, reads the keys to know which run and which agent calls it, and for which person. The keys are data for the server. The kernel reads nothing back from them, and they grant nothing: a server still authenticates the caller, because any client can send the same keys. The Go names of the keys are `fw.MCPMetaRun`, `fw.MCPMetaAgent`, `fw.MCPMetaNode`, `fw.MCPMetaPrincipal`, and `fw.MCPMetaPrincipalKind`.
+
 #### Failure handling
 
 A connection error or a 5xx is retried three times with exponential backoff. A 4xx is not retried. After five failures in a row, `fw` marks the server down for 30 seconds. During that time each call to its tools returns `is_error` at once, with a message that names the server. The gauge `fw_mcp_server_up` shows the state. The `http` tool allowlist does not apply to MCP endpoints, because the two are separate plugs.
@@ -574,10 +635,34 @@ A rule is one of four forms:
 |---|---|---|
 | a flag | `destructive` | every tool with that flag |
 | a tool glob | `git.*` | the tool name |
-| a tool and a command pattern | `bash: git push*` | the `command` field of the input |
+| a tool and a command pattern | `bash: git push*` | the `command` field of the input, and for a deny or an ask rule each simple command in it |
 | a tool, a field, and a pattern | `files: path=*.env` | that string field of the input |
 
 In a command or field pattern, `*` matches any text, slashes included, and `?` matches one character. If the input holds that field, the field form applies. Otherwise the text matches the command, so `bash: FOO=bar*` still matches a command. With the field form, a deployment restricts what a tool call can touch: a path, a URL, a subject, a method.
+
+#### Compound commands
+
+A command pattern matches the whole text of the command from its start. A model often joins commands, as in `cd /work && git push`. So a deny or an ask rule also matches each simple command in the text. A simple command is one command and its arguments, such as `git push origin main`. The kernel splits the text where the shell starts a new command: at `&&`, `||`, `;`, `|`, `&`, and a new line. A separator inside quotes or after a backslash does not split the text. A redirection such as `2>&1` or `&>file` does not split it either. The kernel removes the blanks at the start and the end of each part. The field form on the field `command`, such as `bash: command=git push*`, splits the same way.
+
+| Rule | Command | Verdict |
+|---|---|---|
+| `ask: bash: git push*` | `cd /work && git push origin main 2>&1` | ask |
+| `ask: bash: git push*` | `echo "a && git push"` | no match: the separator is inside quotes |
+| `deny: bash: rm -rf*` | `make clean; rm -rf build` | deny |
+
+The shell also runs a command in other places. So the kernel matches these parts too (`fw/command.go`):
+
+- Each simple command inside `( )`, `$( )`, `<( )`, and backquotes, also inside double quotes. So `echo "$(git push)"` matches `git push*`. Single quotes keep their text as data, so `echo '$(git push)'` does not match.
+- The text from the command word on. Variable assignments such as `FOO=1` can come before the command word. A function header such as `f()` can come there too. So can the reserved words `!`, `{`, `if`, `then`, and `elif`. The reserved words `else`, `do`, `while`, `until`, and `coproc` can come there too. So `GIT_SSH_COMMAND=x git push` and `if git push; then` match `git push*`.
+- After a runner, the text from each later word on. A runner is a command that runs another command from its arguments. The runners are `sudo`, `doas`, `su`, `runuser`, `env`, `time`, `nohup`, and `xargs`. `nice`, `ionice`, `timeout`, `stdbuf`, `setsid`, `chroot`, and `flock` are runners too. So are `watch`, `command`, `builtin`, `exec`, `eval`, `find`, and `ssh`. The last runners are the shells `sh`, `bash`, `zsh`, `dash`, `ksh`, and `fish`. A later word can also hold a whole command line, as the argument of `sh -c` does. When a later word holds a blank, a quote, or a special character, the kernel reads it as a command line too. It removes the quotes of the word first. So `sudo -u ci git push`, `echo origin | xargs git push`, and `bash -c 'cd x && git push'` match `git push*`.
+- Each line of a here-document. When its delimiter has no quotes, a body runs its `$( )` parts. A script that a body writes to a file can run later. A quote in a body does not reach past its line.
+- Each of these parts without its quotes and backslashes, with one space between its words. So `git 'push'` and `git  push` match `git push*`.
+
+The split errs on the side of a match. A quote that does not close counts as a plain character, so it hides no text. A word after a runner matches also as a plain argument, as in `sudo echo git push`. A line of a here-document that only goes to a file matches too. Such a command asks although it does not have to. A command that the kernel cannot split within its bounds matches every deny and ask rule with a command pattern for its tool. The bounds are 8 levels of nesting and 16 MiB for all the parts together.
+
+An allow rule matches the whole text of the command only. One part of a compound command never allows the other parts. So `allow: bash: git status*` does not allow `cd x && git status`. A deny or an ask rule that matches a part wins over an allow rule that matches the whole text.
+
+A command pattern guards against the plain forms of a command. It is not a sandbox. It matches the words as the model wrote them. So `git push*` does not match `git -C repo push`, a command in a variable such as `$GIT push`, or a script that runs `git push`. A rule for such a form names it too, such as `bash: git -C * push*`. A boundary that must hold does not rest on a command pattern alone. The run then also lacks the credential, or the agent gets a narrower tool in place of `bash`.
 
 A tool can resolve its input before the policy decides (`fw.Resolver`). The `files` tool gives the real path of the file, relative to its root, after `./`, an absolute path, and symbolic links. With `tools.files.perRun`, its root is the directory of the run, so a rule such as `files: path=docs/*` matches `docs` in that directory. A deny or an ask rule matches the path of the model or the resolved path. An allow rule matches only the resolved path, so `docs/../secrets/a` does not pass `allow: files: path=docs/*`. `policy.external` gets the resolved input in the field `resolved`.
 
@@ -596,6 +681,8 @@ Every tool call goes through the limits middleware, `fw.LimitTools`. The configu
 | `timeout` | 10m | A call that runs longer gets an error result and its context ends |
 
 The limits apply to the built-in tools, to MCP tools, to A2A peers, and to tools passed as Go options alike. The reason is that the middleware wraps every tool outermost. The kernel records the bounded result in the ledger, so the history that the next model call sends is bounded too. An image or a document in a result counts with its size. If it does not fit, the kernel drops it with a note. The cut keeps two thirds of the room for the head and one third for the tail. The start of a listing and the end of a log therefore both survive.
+
+The output limit does not cut the result of a step of a check run, because no model reads it. The check keeps at most its own `maxBytes` of each result (section 23.3).
 
 In a run, the kernel also writes the full text of a cut result to `.fw-tool/<call id>.txt` in the directory of the run, with every secret replaced as in the ledger, and records `fw.file.changed` for it. The note at the cut names the file and its size, so the model reads the part that it needs with the `files` tool and a line range. One careless command then costs the context window only the limit, and a lower limit, such as 16 KB for a local model, loses nothing. The `bash` tool keeps up to 1 MiB of the head of each stream and 32 KB of its tail when this limit applies to it, so the file holds the whole output of most commands. Without the limit, `bash` keeps 100 KB of the head and the tail itself. Without `tools.files.perRun`, the directory of the run is the root of the workspace, so a git checkout there wants `.fw-tool/` in its `.gitignore`.
 
@@ -622,7 +709,7 @@ A scope keeps the notes of one person apart from the runs of another. It does no
 The store keeps these rules for every write, from any surface:
 
 - A note holds at most 128 KB, and one scope holds at most 2,000 notes. A write past a limit fails with a message that the model reads (`memory.ErrLimit`).
-- The count of the notes and every walk of a scope, for the index, the listings, the scan, and the FTS index, visit at most 10,000 notes and, apart from them, at most 10,000 other entries, such as directories and hidden files. So directories do not use up the bound of the notes. A walk that stops at the bound of other entries cannot finish its count, so a new note fails closed with `memory.ErrLimit`, and the listings and the search miss the notes past the bound.
+- The count of the notes and every walk of a scope, for the index, the listings, the scan, and the FTS index, visit at most 10,000 notes and, apart from them, at most 10,000 other entries, such as directories and hidden files. So directories do not use up the bound of the notes. A walk that stops at the bound of other entries cannot finish its count, so a new note fails closed with `memory.ErrLimit`, and the listings and the search miss the notes past the bound. Each of them says so. The index at the start of a run and the `list` tool of `fw-memory` end with a sentence that names the bound (`memory.CutNote`), a search says it in its notes, `GET /v1/memory/notes` adds `cut: true`, and `fw doctor` warns that its counts are too low.
 - A name is UTF-8, has at most 8 parts, such as `a/b/c.md` with 3, and has no part that starts with `.` and no control character, a rune below 0x20 or 0x7f. So no note hides from the index and the listings, and no name adds a line to the index. A walk does not go into a directory that is too deep to hold a note. The index also escapes each name (`memory.EscapeName`), so a file that a person put in the directory with a newline in its name cannot forge a line.
 - A write goes to a hidden temporary file, which the store syncs and renames over the note, and then the store syncs the directory of the note, so a stop of the process or of the system leaves the old note or the new one, never a part. The first open of a scope by a `Store` removes the hidden temporary files that a stopped write left there, while it holds the lock of the scope.
 - A write takes the lock of its scope directory, a `flock` on the inode of the directory, so the writes of every `Store` and every process on the volume go one at a time. The store tries the lock without blocking, and again after a short pause, until it gets the lock, the context of the call ends, or 30 seconds pass; then the write fails with an error that says why (`memory.ErrLockTimeout`). A compare-and-swap (`Remember` with a hash, `absent`, or `present`) and the count of notes hold the lock from the read to the write, so two writers with the same condition never both succeed.
@@ -966,32 +1053,34 @@ The native API is small. Every call returns JSON. Every error is an RFC 9457 pro
 
 | Method and path | Purpose |
 |---|---|
-| `POST /v1/runs` | Create a run. Body fields: `agent`, `input`, `title`, `instructions`, `profile`, `budget`, `metadata`, `wait`, `files` (section 7.10). A trusted caller, the static token or a workload, also sets `principal` and `principalKind`, the person that the run is for, and `id`, the id of the run (section 11.9). |
-| `GET /v1/runs` | List the runs of this process. `?parent={id}` lists the children of a run. `agent`, `state`, `principal`, `batch`, and `limit` narrow the list; `batch` matches the metadata key `fw.batch`. `GET /v1/fleet/runs` of the workbench lists the runs of a whole fleet. |
+| `POST /v1/runs` | Create a run. Body fields: `agent`, `input`, `title`, `instructions`, `profile`, `budget`, `metadata`, `wait`, `files` (section 7.10), and `check` (section 23). A run with `check` calls tools and no model, and its `input` can be empty. A trusted caller, the static token or a workload, also sets `principal` and `principalKind`, the person that the run is for, and `id`, the id of the run (section 11.9). |
+| `GET /v1/runs` | List the runs of this process. `?parent={id}` lists the children of a run. `agent`, `state`, `principal`, `batch`, `kind`, and `limit` narrow the list. `batch` matches the metadata key `fw.batch`. Without `kind`, the list leaves out the check runs, and `kind=check` lists the check runs alone (section 23). `GET /v1/fleet/runs` of the workbench lists the runs of a whole fleet. |
 | `GET /v1/runs/{id}` | Get one run. |
+| `GET /v1/runs/{id}/live` | Stream the text of the run as the model produces it, as server-sent events without ids (section 5.1). For the model call in flight and every later one while the client stays connected: `delta` with `{turn, text}` for each piece of the answer, joined to at most one event per 40 ms; `tool` with `{turn, name, callId}` when the adapter yields a tool call of the response; `done` with `{turn, stopReason}` when the model call ends, `error` for a call that failed; and `idle` with `{state}` when the run leaves the running state. A client that connects in the middle of a call gets the pieces from then on. A comment line every 15 seconds keeps proxies open. The stream ends when the run finishes or the client goes, and it drops a client that falls 64 events behind. It needs the viewer role on the run, as the events route does. A run takes 16 clients; one more gets a 429. The relay of the workbench forwards it as it forwards the events route. |
 | `GET /v1/runs/{id}/events` | Stream the ledger as server-sent events. `Last-Event-ID` resumes from a sequence number. Under `Accept: application/json`, one page of events with `lines`, the short line of each event, as the MCP tool `run_events` of the workbench gives. |
-| `POST /v1/runs/{id}/messages` | Send a follow-up message. Body fields: `content`, `files`, and `budget`, which changes the budget of the run before the message (section 5.2). |
-| `PATCH /v1/runs/{id}/budget` | Change the budget of a run (section 5.2). The body is a budget; each field that it sets replaces the same field for the work that follows. The answer holds `budget`, the effective budget after the change, and `run`, the run object. It needs the operator role on the run, as a decision does. |
-| `POST /v1/runs/{id}/approvals/{approval}` | Decide a pending approval. Body fields: `decision`, `note`. |
-| `POST /v1/runs/{id}/cancel` | Cancel a run. |
-| `POST /v1/runs/{id}/fork` | Branch a run (section 4.7). Body fields: `seq`, the last event to keep, every event when absent; `input`, a message that follows the kept events; `model`, a selector for the branch; `metadata`; `spawn`, which runs the branch in another process through the spawner. The answer is the branch. With `spawn` the status is 202, and the branch is queued on its member until that process takes it. |
+| `POST /v1/runs/{id}/messages` | Send a follow-up message. Body fields: `content`, `files`, `budget`, which changes the budget of the run before the message (section 5.2), `from`, the party that the caller relays the message for (section 5.5), and `pinned`, which keeps the message through every compaction; any caller who can send sets it (section 5.5). The message records the subject of the caller in `by`, or the person of the header `Fw-On-Behalf-Of` (see On behalf of a person below). Only a trusted caller, the static token or a workload, sets `from`, as for `id` of `POST /v1/runs`; anyone else gets a 403. |
+| `POST /v1/runs/{id}/reactions` | React to an event of a run, or to the run as a whole (see Reactions below). Body fields: `seq`, the event, `0` or absent for the run; `reaction`, `up`, `down`, or `heart`; `note`, at most 1 KB; and `by`, the person. Only a trusted caller, the static token or a workload, sets `by`, as for `from` of a message; anyone else gets a 403. Without `by`, the caller reacts as itself, or for the person of the header `Fw-On-Behalf-Of`. The answer is 200 with the run object. A `seq` that the run does not have, an unknown reaction, and a longer note are a 400. It needs the operator role on the run. |
+| `PATCH /v1/runs/{id}/budget` | Change the budget of a run (section 5.2). The body is a budget; each field that it sets replaces the same field for the work that follows. The answer holds `budget`, the effective budget after the change, and `run`, the run object. It needs the operator role on the run, as a decision does. The change records the caller, or the person of the header `Fw-On-Behalf-Of`, in `by`. |
+| `POST /v1/runs/{id}/approvals/{approval}` | Decide a pending approval. Body fields: `decision`, `note`. The decision names the caller, or the person of the header `Fw-On-Behalf-Of`, as its decider. |
+| `POST /v1/runs/{id}/cancel` | Cancel a run. Its `fw.run.finished` names the caller, or the person of the header `Fw-On-Behalf-Of`, in `by`. |
+| `POST /v1/runs/{id}/fork` | Branch a run (section 4.7). Body fields: `seq`, the last event to keep, every event when absent; `input`, a message that follows the kept events; `model`, a selector for the branch; `metadata`; `spawn`, which runs the branch in another process through the spawner. The answer is the branch. With `spawn` the status is 202, and the branch is queued on its member until that process takes it. The branch belongs to the caller, or to the person of the header `Fw-On-Behalf-Of`. |
 | `POST /v1/runs/fork` | Start a branch from the events that another process kept (section 4.7). Body fields: `id`, the id of the branch, a new one when absent; `events`; `input`; `model`; `metadata`. The same branch sent again under its id answers with the branch that the process has. For the static token or a workload alone. |
 | `GET /v1/runs/{id}/files` | List the files that the run changed (section 7.9). |
 | `GET /v1/runs/{id}/files/{path}` | The content of a file that the run changed, or a view of it under `Accept: application/json`. `?download=1` always returns the content (section 7.9). |
 | `GET /v1/agents` | List agent profiles with their descriptions, instructions, and skills. |
 | `GET /v1/tools` | List tools with their specifications. Each entry also has `text`, a plain phrase that says what the tool does. |
-| `GET /v1/skills` | List skills. |
-| `GET /v1/skills/{name}` | The `SKILL.md` text, or JSON with the file list under `Accept: application/json`. |
+| `GET /v1/skills` | List skills, each with `origin`, `local` or `mcp`, and for a skill of an MCP server `server` and `uri` (section 7.3). |
+| `GET /v1/skills/{name}` | The `SKILL.md` text, or JSON with the file list under `Accept: application/json`. The name of a skill of a server has a slash, such as `/v1/skills/github/review`; the kernel reads its text from the server and checks it (section 7.3). |
 | `GET /v1/status` | The state of the agent at a glance: the usage of the runs that the caller can view, the oldest approval that waits, and the counts of runs by state (section 11.8). |
 | `GET /v1/memory` | Search the memory of an agent (section 7.8.3). Query: `agent`, `default` when absent; `q`, the words; `kinds`, a comma list of `note`, `run`, and `skill`; `limit`, 10 by default and 50 at most. The answer holds `scope` and `hits`, and `notes` when a bound stopped a search early. The kind `file` belongs to the tool of a run, so the route refuses it. |
-| `GET /v1/memory/notes` | List the notes of the scope of the caller in an agent, newest first, without their text. Query: `agent`. |
+| `GET /v1/memory/notes` | List the notes of the scope of the caller in an agent, newest first, without their text. Query: `agent`. The answer holds `cut: true` when the walk stopped at its bound (section 7.8.1), so notes can be missing. |
 | `GET /v1/memory/notes/{path}` | One note with its `hash`, the SHA-256 of the whole file, which the header `ETag` repeats. Under `Accept: text/markdown`, the text alone. A directory answers 400. |
 | `PUT /v1/memory/notes/{path}` | Write the body as the text of a note. `If-Match` with the hash of the current note, quoted or weak, makes the write a compare-and-swap, `If-Match: *` writes only a note that exists, and `If-None-Match: *` writes only a new note; each answers 412 when the note differs. The store keeps its limits (section 7.8.1). |
 | `DELETE /v1/memory/notes/{path}` | Remove a note, and its rows of the FTS index. A directory answers 400. |
 
 The routes of the memory take the scope from the agent of the query and the principal of the request, never from a field (section 7.8.1). An agent that does not exist and an agent that the caller cannot view (`agent.view`) both answer 404 with the same text, as `GET /v1/agents/{name}` does, so the routes do not tell which agents exist; a caller who can view the agent and lacks the action gets 403. Reading needs `agent.run` on the agent. Writing or removing a note of the scope `principal` needs `agent.run`. Writing or removing a note of the scope `agent`, which every person of the agent reads, needs `agent.edit`. Writing or removing a note of the scope `shared`, which every profile of the process reads, needs the admin role of the process (`access.admins`), and the 403 says so. Each write and removal goes to the log with the subject of the caller, the operation, the ref, the scope, the size, and the SHA-256, never the text. These routes let a person, a script, or another harness seed and curate the memory of an agent without a run.
 
-`profile` is an inline profile (section 12.5). Its fields are `system`, `instructions`, `skills`, `tools`, `model`, `effort`, `policy`, and `budget`. `budget`, at the top level, inside the profile, in a follow-up, and in `PATCH /v1/runs/{id}/budget`, takes the seven limits and the three fields of the final report of section 5.2. `deadline` and `reportTimeout` are duration strings, such as `"90s"`, or numbers of nanoseconds. Examples of a request that the kernel refuses are an unknown model name and a child past the spawn limits. Such a request gets a 400 or a 409 problem document that names the field.
+`profile` is an inline profile (section 12.5). Its fields are `system`, `instructions`, `skills`, `tools`, `model`, `effort`, `policy`, `budget`, and `compaction`, which takes `at`, `model`, and `off` (section 5.4). `budget`, at the top level, inside the profile, in a follow-up, and in `PATCH /v1/runs/{id}/budget`, takes the seven limits and the three fields of the final report of section 5.2. `deadline` and `reportTimeout` are duration strings, such as `"90s"`, or numbers of nanoseconds. Examples of a request that the kernel refuses are an unknown model name and a child past the spawn limits. Such a request gets a 400 or a 409 problem document that names the field.
 
 `POST /v1/runs` with `wait: true` blocks until the run finishes or needs input. With the header `Accept: text/event-stream`, the same call streams events as they happen and then closes. The header `Idempotency-Key` makes the call safe to retry. A run object looks like this:
 
@@ -1013,9 +1102,17 @@ The routes of the memory take the scope from the agent of the query and the prin
 
 `usage` sums the work of the run: the input, output, cache read, and cache write tokens of its model calls, its turns, its tool calls, and `costUSD`, the cost of the calls whose model has a price (section 5.2). `usage` never holds the work of a child run. `unpricedTokens` counts the tokens of the calls whose model has no price, because their cost is unknown, not zero. A price of zero is a price. The kernel records the usage of the run so far as `totals` on every `fw.run.finished` and `fw.run.suspended`, across follow-ups, so a run that finishes again carries more. The projection takes those totals in place of its own sum, and `usageSeq` is the sequence number of the latest event that carried them. The ledger gives the same usage with and without the totals, because they are the sum of the events before them. After a restart with another price table, the work before the latest totals keeps the cost at the prices of its time. A consumer that receives only the lifecycle events of a run therefore knows its usage each time the run finishes or is suspended (section 9.4). A branch counts its own work only (section 4.7).
 
+`activity` says what a run that works does now: `turn`, the number of the open turn; `tool` and `callId`, the tool call that the run waits for, absent while the model works; and `since`, the time of the event that began it. `fw.turn.started` sets the turn and clears the tool. `fw.tool.requested` sets the tool and the call id. `fw.tool.responded` of that call clears the tool. `fw.turn.finished` and `fw.run.finished` clear the field. `fw.approval.requested` and `fw.run.suspended` clear it too. A decision of that approval, or a resume of a run that waits for no decision, brings it back while the turn is open. A call that asked a question then goes on with its tool. A run that waits or finished has no field. The ledger never holds it. The kernel keeps the words out of the run object: `view.ActivityPhrase` words the activity with the step phrase that a result lists (`view.StepPhrase`), such as `Ran "go test ./..."`, from the input of the `fw.tool.requested` with the same call id, or "Thinking in turn 7" while the model works.
+
+```json
+"activity": { "turn": 7, "tool": "bash", "callId": "toolu_01", "since": "2026-10-13T09:14:02Z" }
+```
+
+`reactions` counts the reactions of people on the run and its events by reaction, such as `{"up": 2, "heart": 1}`, and holds nothing more. A run without a reaction has no field. The front of a fleet keeps the list of the reactions in its own store.
+
 A run that started a child also has `treeUsage`, the usage of the run and of every run under it, as the process that holds the run knows it: its children in this process as they are now, and its children in other processes as each last reported its own tree. `treeOpen` counts the runs under it that did not finish, and `treeWorking` the runs of those that work: queued or running. `treeUsage` includes `usage`, so a sum over several runs, such as the usage of a job, adds `usage` and never `treeUsage`. The ledger never holds either field: the kernel sets them when it reports a run, so a parent in another process reads the whole tree of a child in one read (section 11.9).
 
-The run states are `queued`, `running`, `input-required`, `completed`, `failed`, `canceled`, and `suspended`. Authentication defaults to a bearer token read from `FW_API_TOKEN`. The setting `auth.mode: none` must be explicit. The modes `oidc` and `spiffe` give every caller an identity, and section 13 says what an identity can do. The native API also serves `GET /v1/agents/{name}`. The workbench serves `PUT` and `DELETE /v1/agents/{name}` and `GET /v1/whoami`, the caller with its roles and its teams.
+The run states are `queued`, `running`, `input-required`, `completed`, `failed`, `canceled`, and `suspended`. Authentication defaults to a bearer token read from `FW_API_TOKEN`. The setting `auth.mode: none` must be explicit. The modes `oidc` and `spiffe` give every caller an identity, and section 13 says what an identity can do. The native API also serves `GET /v1/agents/{name}`. A relay can answer it first, for a profile that another process runs (section 12.8). The workbench serves `PUT` and `DELETE /v1/agents/{name}` and `GET /v1/whoami`, the caller with its roles and its teams.
 
 An extension adds routes to this surface (section 12.8). The workbench adds the page, the browser sign-in, home, results, transcripts, the builder, the fleet, usage, and connections (the workbench architecture, section 2).
 
@@ -1029,11 +1126,38 @@ The kernel makes no title call. A title that a model writes comes from the workb
 
 #### Annotations
 
-`Agent.Annotate` adds metadata to a run after the kernel queued it, as the event `fw.run.annotated`. The metadata merges into the metadata of the run, and a later entry replaces an earlier one. A new `fw.title` entry changes the title of the run. The data can carry the usage, the provider, and the model of the model call that produced the metadata, such as a title call. The usage and the cost of the run then include that usage, and the metrics count it (section 10.1). With a principal, the caller needs the operator role on the run. The entries `idempotencyKey`, `fw.drift.system`, and `fw.drift.instructions` (section 12.5) are the kernel's and cannot change. A request cannot set them either, on any surface. The metadata after the merge must fit the bounds of `fw.CheckMetadata`. The entries that the kernel sets, also `fw.forkOf` and `fw.forkSeq` of a branch (section 4.7) and the `fw.intake.*` entries of a job from the bus intake (section 9.3), do not count, so an entry of the kernel never makes a later annotation fail.
+`Agent.Annotate` adds metadata to a run after the kernel queued it, as the event `fw.run.annotated`. The metadata merges into the metadata of the run, and a later entry replaces an earlier one. A new `fw.title` entry changes the title of the run. The data can carry the usage, the provider, and the model of the model call that produced the metadata, such as a title call. The usage and the cost of the run then include that usage, and the metrics count it (section 10.1). With a principal, the caller needs the operator role on the run. The entries `idempotencyKey`, `fw.drift.system`, and `fw.drift.instructions` (section 12.5), and `fw.kind` of a check run (section 23), are the kernel's and cannot change. A request cannot set them either, on any surface. The metadata after the merge must fit the bounds of `fw.CheckMetadata`. The entries that the kernel sets, also `fw.forkOf` and `fw.forkSeq` of a branch (section 4.7) and the `fw.intake.*` entries of a job from the bus intake (section 9.3), do not count, so an entry of the kernel never makes a later annotation fail.
 
 The kernel annotates a run itself when the text of its profile changed across a restart, with the keys `fw.drift.system` and `fw.drift.instructions` (section 12.5).
 
+#### Reactions
+
+`Agent.React` records the reaction of a person on an event of a run, or on the run as a whole, as the event `fw.run.reacted`: a thumb up, a thumb down, or a heart, with a note of at most 1 KB. With a principal, the caller needs the operator role on the run, as for an annotation. `by` is the subject of the caller, or the person that a trusted relay names (see On behalf of a person below). The process itself, the static token, or a workload can name another person in `by`, so the front of a fleet records the reaction of a person on a run of a Task; any other principal that names another person gets `ErrForbidden`. A reaction that the same person already put on the same event appends nothing, also with another note. The run object counts the reactions in `reactions`. The metadata of a run is one flat map with a bound on its entries, so a reaction is an event of its own and not an annotation: a run with fifty reactions can still take its next annotation.
+
+A thumb on the `fw.run.finished` of a completed episode is also a quality receipt (section 10.1): `React` calls `Agent.ObserveQuality` with `accepted` for `up` or `rejected` for `down`, that completion, and the receipt id `reaction:<run>:<seq>:<by>`. A subject that makes the id longer than 128 bytes gives its place to the first 16 bytes of its SHA-256. The reaction then records `receipt: true`. When `ObserveQuality` refuses the receipt, because a receipt of another person or another thumb of the same person already verified the completion, the reaction still records, with `receipt: false`, and the log says why. A heart records no receipt, and neither does a thumb on any other event.
+
+A reaction changes the state of a run in no way, as an annotation does. One that arrives after `fw.run.finished` leaves the run finished: the metrics and the traces open no run for it, the file ledger closes the file of the run again after it, and a restart does not resume the run. The file ledger syncs the event before `React` returns, as it does for an annotation.
+
 An annotation changes the state of a run in no way. One that arrives after `fw.run.finished` leaves the run finished, as the record and the report of a child do (section 11.9): the metrics and the traces open no run for it, the file ledger closes the file of the run again after it, and a restart does not resume the run, because the rebuild reads the state of a run and not its last event (section 4.5).
+
+#### On behalf of a person
+
+People act on the runs of a fleet through its front, and the workers hold the runs. A trusted relay names the person with the header `Fw-On-Behalf-Of`. The ledger records that person. The relay decides for the person before it relays.
+
+The front authenticates the person. It decides the action with the rules that decide what the person sees. Then it sends the request with the static token and the header `Fw-On-Behalf-Of: <subject>`, the subject of the person. The worker authorizes the static token, as for any request. It never authorizes the named person, so the header neither widens nor narrows what the caller can do. `fw.PrincipalFrom` still returns the caller. The bearer token of a person therefore never reaches a worker.
+
+Every route of the native API reads the header after the authentication, and so does every route of an extension. The header names the person in these records:
+
+| Route | Record |
+|---|---|
+| `POST /v1/runs/{id}/approvals/{approval}` | `decider` of `fw.approval.decided` |
+| `POST /v1/runs/{id}/messages` | `by` of `fw.message.received`, and `by` of `fw.budget.changed` for a budget in the body |
+| `PATCH /v1/runs/{id}/budget` | `by` of `fw.budget.changed` |
+| `POST /v1/runs/{id}/cancel` | `by` of `fw.run.finished`. A run under the canceled run records no person. |
+| `POST /v1/runs/{id}/reactions` | `by` of `fw.run.reacted`. A `by` in the body wins. |
+| `POST /v1/runs/{id}/fork` | the principal of the branch, with the kind `user` |
+
+Only the static token or a workload names another person, as for `from` of a message. Any other caller that names another subject gets a 403. A caller that names its own subject changes nothing. An empty header changes nothing too. The value holds at most 256 bytes and no control character, and it is UTF-8. A longer value, a control character, a value that is not UTF-8, and a second header are a 400. `POST /v1/runs` takes the person of a new run from the body fields `principal` and `principalKind`, not from the header. A Go caller names the person in a context with `fw.WithActingFor` and reads it with `fw.ActingFor`.
 
 ### 8.3 A2A server
 
@@ -1061,7 +1185,7 @@ The MCP server is part of the workbench. `fw-workbench` serves it at `/mcp` over
 
 ### 8.6 Fleet
 
-The fleet is a feature of the workbench (the workbench architecture, section 4), and the kernel knows no fleet. The kernel gives a linked package three hooks for it. A service runs beside the agent for as long as the agent lives (section 12.4). A relay of the native surface answers a request about a run that another process holds (section 12.8). A collector adds gauges to the metrics surface (section 10.1). A fleet member reads the credential of a caller from `fw.CredentialFrom` and acts on the caller's behalf at the member that owns a run. The field `member` of a run object names the process that holds the run when it is not this one; the kernel never sets it.
+The fleet is a feature of the workbench (the workbench architecture, section 4), and the kernel knows no fleet. The kernel gives a linked package three hooks for it. A service runs beside the agent for as long as the agent lives (section 12.4). A relay of the native surface answers a request about a run that another process holds (section 12.8). It can also answer for a profile that another process runs. A collector adds gauges to the metrics surface (section 10.1). A fleet member reads the credential of a caller from `fw.CredentialFrom` and acts on the caller's behalf at the member that owns a run. A front can also decide for a person itself and relay the action with the static token and the header `Fw-On-Behalf-Of` (section 8.2). Then no credential of a person leaves the front. When another process holds a run, the field `member` of the run object names that process. The kernel never sets it.
 
 ## 9. Message queues
 
@@ -1106,7 +1230,7 @@ The bus has no other contract. An earlier revision let a driver keep the last ev
 
 ### 9.3 Intake
 
-The setting `bus.intake` names a queue, for example `fw.jobs.reviewer`. Each message is a run request with the same body as `POST /v1/runs`. A request from the queue keeps the `principal` and the `principalKind` that it names, because the bus is a channel of the process, so the front of a fleet sends the work of a person to a worker and the run acts as that person (the workbench architecture, section 4.9). If the bus is out of reach when the process boots, the consumer does not start, and the kernel logs a warning and tries again in the background, with a pause that doubles up to 30 seconds, while the process serves its API and its health. A sandbox whose egress policy takes effect after the first packet, and a bus server that restarts, both need this.
+The setting `bus.intake` names a queue, for example `fw.jobs.reviewer`. Each message is a run request with the same body as `POST /v1/runs`. A request with `check` starts a check run (section 23). A request from the queue keeps the `principal` and the `principalKind` that it names, because the bus is a channel of the process, so the front of a fleet sends the work of a person to a worker and the run acts as that person (the workbench architecture, section 4.9). If the bus is out of reach when the process boots, the consumer does not start, and the kernel logs a warning and tries again in the background, with a pause that doubles up to 30 seconds, while the process serves its API and its health. A sandbox whose egress policy takes effect after the first packet, and a bus server that restarts, both need this.
 
 #### One job for each free run slot
 
@@ -1158,6 +1282,10 @@ With the file ledger, the ledger is the queue of the egress. The observer only n
 The cursors are files under `<ledger>/.egress/`, one for each route and run, apart from the runs. A route is the prefix, the atespace, and the filter of the types. A change of any of them starts new cursors, so the new route sends the history of the ledger again. The first boot of a kernel with cursors on the ledger of an older kernel sends the history too, final events included. The events behind a cursor reach the disk before the cursor does, so a crash can repeat an event but never skips one. A cursor that no longer matches the ledger, for example after a recovery cut the run, goes, and the egress sends the run again from the start. The delivery is therefore at least once: a crash, a failed save of a cursor, or a confirmation lost on the way sends an event again under the same id. A consumer drops an id that it has seen, and applies the events of a run by their sequence number.
 
 A pass of the egress reads only the runs with new events, from the line of their cursor, and publishes at most 128 events of one run before it goes on to the next run, so a long run cannot hold back the others. A pass over every run comes at the boot and then once a minute. A run whose ledger cannot be read waits for that pass, and the other runs go on.
+
+A consumer that applies the events of a run with `Run.Apply` gets the `activity` of the run object (section 8.2) only when the stream carries `fw.turn.started`, `fw.tool.requested`, and `fw.tool.responded`. With `fw.turn.finished` too, the activity ends with the turn; without it, it ends at the next approval, suspend, or end of the run. `fw.tool.requested` carries the input of each call, so a filter that adds it puts the inputs on the stream, each string cut to `bus.egressMaxBytes` when it is set (below).
+
+The setting `bus.egressMaxBytes` (`FW_BUS_EGRESS_MAX_BYTES`) bounds each string value in the `data` of a published event. A longer value goes out cut to its first `bus.egressMaxBytes` bytes, at a rune boundary, followed by a note of the shape ` [cut 1234 of 5678 bytes]`: the number of bytes cut and the length of the whole value. The egress walks nested objects and arrays, and leaves the keys of an object and every value that is not a string as they are. The envelope stays whole: the id, the type, the time, the source, the subject, the sequence number, and the node. The `raw` provider blocks of `fw.model.responded` are data too, and the egress cuts their strings like any other. The cut happens on the copy that goes to the bus, so the ledger, the native API, and a replay keep every event whole. The default, 0, publishes the data whole. An event with no string literal past the bound goes out unchanged without a decode, after one scan of its bytes; only an event with a long string is decoded and encoded again, and the keys of its objects then come in sorted order. The front of a fleet sets the bound on its workers, so it can put `fw.tool.requested` and `fw.tool.responded` on the stream without whole tool inputs and outputs. A cursor of the egress does not depend on the bound, so a change of it sends no history again.
 
 The stream is not a ledger. A consumer that adds up the tokens of `fw.model.responded` can count an event twice after a crash, and can miss some with a ledger without cursors. A consumer also does not need `fw.model.responded`, which carries the content of the run: `fw.run.finished` and `fw.run.suspended` carry the totals of the run (section 8.2), and the projection sets the usage from them. A consumer of the lifecycle events alone, such as the front of a fleet, therefore knows the tokens, the turns, the tool calls, and the cost of every run that finished or was suspended. A lost event costs nothing once a later `fw.run.finished` or `fw.run.suspended` of the same run arrives. With the file ledger, the next boot of the process sends a final event that the bus did not confirm. Until then, or with a ledger without cursors, the consumer keeps the usage of the event before it until it reads the run again, as the front of a fleet does when a Task wakes. Between two such events, the usage of a run on that stream is not final, and a consumer must show it as partial.
 
@@ -1224,11 +1352,11 @@ The model latency histogram has buckets up to 900 seconds, because one turn on a
 
 Execution completion is not verification. `fw_task_completions_total` counts each own completion episode, including failure and cancellation, and labels the model grader judgment separately. `unverified` means that no grader judgment was recorded. A follow-up starts another episode. Copied branch history contributes no completion or intervention.
 
-A trusted integration calls `Agent.ObserveQuality` with a stable receipt ID and the sequence of an own completed `fw.run.finished`. It records a final `accepted`, `satisfied`, `rejected`, or `unknown` verification as `fw.run.annotated`. Accepted means that a person accepted the result; satisfied means that an external verifier checked it. Model grading alone creates neither. Identical receipt retries append nothing, including after restart; a conflicting receipt or second final verification of the same completion is refused. The API needs operator access when a principal is present and is not a model tool.
+A trusted integration calls `Agent.ObserveQuality` with a stable receipt ID and the sequence of an own completed `fw.run.finished`. It records a final `accepted`, `satisfied`, `rejected`, or `unknown` verification as `fw.run.annotated`. Accepted means that a person accepted the result; satisfied means that an external verifier checked it. Model grading alone creates neither. Identical receipt retries append nothing, including after restart; a conflicting receipt or second final verification of the same completion is refused. The API needs operator access when a principal is present and is not a model tool. A thumb of a person on that `fw.run.finished`, through `Agent.React` or `POST /v1/runs/{id}/reactions`, records such a receipt for the person: `accepted` for a thumb up and `rejected` for a thumb down, with the receipt id `reaction:<run>:<seq>:<by>`. The first thumb on a result verifies it, and a later thumb records the reaction without a receipt (section 8.2, Reactions).
 
 `fw_task_verifications_total` counts those receipts. Use all execution episodes as the denominator for an overall verified-success rate, or completed episodes for verification coverage. Completions without receipts remain unverified; an explicit unknown receipt is not success. A late receipt can refer to a completion outside the query window, so short-window ratios need that interpretation.
 
-Interventions count attributed approval decisions, interactive user follow-ups, and attributed interactive budget changes. These are concrete actions recorded by the runtime, not proof that a human sat at the keyboard. The per-run histogram counts actions per completion episode, including zero, and labels whether historical coverage is complete. Recovery latency starts at `fw.run.resumed` only for a run that was queued or running at the interruption. A run that waited for input, with a pending approval, waits for a person before and after the restart, so it gets no sample, and its next suspend or resume adds no sample either. Recovery ends at the first model response, tool response or progress event, approval request, or terminal or suspend event. Its result label distinguishes progress, `input_required` (the run reached a question for a person), terminal outcomes, and interruption. It does not measure total outage time, and it never counts the time that a person takes to decide.
+Interventions count attributed approval decisions, interactive user follow-ups, and attributed interactive budget changes. A message that a trusted caller relays from another agent (section 5.5) is not a follow-up of a user. These are concrete actions recorded by the runtime, not proof that a human sat at the keyboard. The per-run histogram counts actions per completion episode, including zero, and labels whether historical coverage is complete. Recovery latency starts at `fw.run.resumed` only for a run that was queued or running at the interruption. A run that waited for input, with a pending approval, waits for a person before and after the restart, so it gets no sample, and its next suspend or resume adds no sample either. Recovery ends at the first model response, tool response or progress event, approval request, or terminal or suspend event. Its result label distinguishes progress, `input_required` (the run reached a question for a person), terminal outcomes, and interruption. It does not measure total outage time, and it never counts the time that a person takes to decide.
 
 Confirmed duplicate effects require application evidence. `QualityObservation.DuplicateEffects` records the number of additional external effects that the integration confirmed; an effects-only receipt needs no completion. Repeated outstanding tool requests count separately as ambiguous retries. Neither a retry nor a prevented duplicate increments the confirmed-effects counter.
 
@@ -1287,12 +1415,12 @@ A span names its run in `gen_ai.conversation.id`, and the run span also in `fw.r
 
 | Attribute | Where | Value |
 |---|---|---|
-| `fw.approval.decider_kind` | event `fw.approval.decided` | `person`, `parent` (a run: the parent of a child, or the run that a grader grades), `token` (the static token), `workload` (a SPIFFE identity), `local` (the local user or `fw run`), `kernel`, or `none` |
+| `fw.approval.decider_kind` | event `fw.approval.decided` | `person` (a user, or the person that a trusted relay names), `parent` (a run: the parent of a child, or the run that a grader grades), `token` (the static token), `workload` (a SPIFFE identity), `local` (the local user or `fw run`), `anonymous`, `kernel`, `none` (no decider), or `unknown` (a decider without a kind, such as in the ledger of an older kernel) |
 | `fw.budget.by_kind` | event `fw.budget.changed` | the same kinds |
 | `fw.outcome.graded` | event `fw.outcome.evaluated` | true when a grader run started; the id of the grader run stays in the ledger |
 | `fw.quality.receipt_sha256` | event `fw.run.annotated` and span `fw.quality.observation` | the SHA-256 of the receipt id in hex, so a trace store matches one receipt without reading its id |
 
-The kind comes from the shape of the subject: a SPIFFE URI is a workload, a run id is a run, and any other subject that is not a fixed word of the kernel is a person. The ledger keeps the subject itself.
+The kind comes from the principal, never from the shape of the subject. The kernel records it in the event beside the subject, as `deciderKind` and `byKind`: the kind of the principal of the caller, with `person` for a user, `person` for the person that a trusted relay names, `parent` for a run that decides for its child or its grader, `local` for `fw run`, and `kernel` for the kernel. So a person whose subject looks like a run id or a SPIFFE URI stays a person. A principal of no known kind records no kind. The ledger keeps the subject itself.
 
 ### 10.3 Logs
 
@@ -1401,7 +1529,7 @@ ax has no RPC for a runner to report its state, and ax commit f0f16ff removed th
 }
 ```
 
-The body counts the runs that the caller can view. `pendingApproval` is the oldest approval that waits, or `null`. `idle` is true when no run is queued or running: every run waits for input, is suspended, or is finished, and a process without runs is idle. `idleSince` is the newest update of a run, or the start of the process when no run worked yet, and it is absent while a run works. The front of a fleet reads the body through the atenet router before it suspends a Task that the egress stream shows as idle (the workbench architecture, section 4.12). A suspended Task costs nothing and wakes on the next request through the router. If ax adds a reporting RPC, a `Reporter` plug pushes the same data.
+The body counts the runs that the caller can view. `pendingApproval` is the oldest approval that waits, or `null`. `idle` is true when no run is queued or running: every run waits for input, is suspended, or is finished, and a process without runs is idle. `idleSince` is the newest update of a run, or the start of the process when no run worked yet, and it is absent while a run works. The front of a fleet reads the body through the atenet router before it suspends a Task that the egress stream shows as idle (the workbench architecture, section 4.12). The `ax` driver reads it before it removes a child Task (section 11.9). A suspended Task costs nothing and wakes on the next request through the router. If ax adds a reporting RPC, a `Reporter` plug pushes the same data.
 
 ### 11.9 Child runs and child tasks
 
@@ -1420,7 +1548,7 @@ The kernel keeps a child inside its parent:
 
 When a child needs an approval or asks a question, `spawn_task` relays it to the caller of the parent. It arrives as a question on the parent run. Every surface shows it, and the answer goes to the child. The parent run therefore stays the one place to watch.
 
-A `Spawner` runs the children in other processes, and `spawn.driver` selects one. Without one, `spawn_task` starts the child in this process, as above. With one, the kernel fills the request of the child and hands it to the spawner: the id of the child is one that the kernel chooses, and the other process holds the child under it; the principal and its kind are those of the parent, so the child acts as the same person; the budget is the budget of the parent, capped, with the working time that the parent has left as the deadline, and with each of `maxTokens`, `maxCostUSD`, and `maxToolCalls` lowered to what the tightest tree of the lineage has left at that moment, so the child alone can never spend more than was left, and with `finalReport: false` when the parent turns the final report off (section 5.2); and the metadata key `fw.parent` holds the id of the parent, and the key `fw.batch` of the parent, the name of its job, passes to the child, as it does for a child in this process. The spawner returns the child and the name of the process that holds it. The kernel counts the child toward `spawn.maxChildren`, and from then on `Get`, `WaitFor`, `Decide`, `Cancel`, and `Children` reach the child through the spawner, with `Run.Member` set. A restart reads the children back from the ledger. A branch in another process is recorded in the same event, first when it is placed and again when it starts (section 4.7). A branch is a run of its own: it shares no budget and no count with the tree of its source. A canceled parent cancels its remote children too.
+A `Spawner` runs the children in other processes, and `spawn.driver` selects one. Without one, `spawn_task` starts the child in this process, as above. With one, the kernel fills the request of the child and hands it to the spawner: the id of the child is one that the kernel chooses, and the other process holds the child under it; the principal and its kind are those of the parent, so the child acts as the same person; the budget is the budget of the parent, capped, with the working time that the parent has left as the deadline, and with each of `maxTokens`, `maxCostUSD`, and `maxToolCalls` lowered to what the tightest tree of the lineage has left at that moment, so the child alone can never spend more than was left, and with `finalReport: false` when the parent turns the final report off (section 5.2); and the metadata key `fw.parent` holds the id of the parent, and the key `fw.batch` of the parent, the name of its job, passes to the child, as it does for a child in this process. The kernel reads the key from the metadata of the parent as it is now, after every annotation (section 8.2), so a front that annotates a run with a batch after the run started gives that batch to every child that the run starts after the annotation. The spawner returns the child and the name of the process that holds it. The kernel counts the child toward `spawn.maxChildren`, and from then on `Get`, `WaitFor`, `Decide`, `Cancel`, and `Children` reach the child through the spawner, with `Run.Member` set. A restart reads the children back from the ledger. A branch in another process is recorded in the same event, first when it is placed and again when it starts (section 4.7). A branch is a run of its own: it shares no budget and no count with the tree of its source. A canceled parent cancels its remote children too.
 
 The parent counts a child in another process in its tree each time it reads the child: in the wait loop of `spawn_task`, in `await_task`, in `Get`, and in `Children`. The other process reports `treeUsage`, the usage of the child and of every run under it there (section 8.2), so one read covers the whole tree of the child. The kernel also reads, every five seconds and up to four at a time, each child that works and that no wait read in that time: a child that is queued or running, or a finished child with a run under it that works (`treeWorking`). A child that `spawn_task` started with `wait` false, or whose parent finished, therefore still counts while it works. The kernel never reads a child in the background that does not work: one that waits for a person, one that sleeps, or one whose tree ended. Under ax, a read goes through the router, which wakes the Task of the child, so such reads would keep a sleeping child awake. While a child works, the status of the process is not idle (`Agent.Following`), so the suspend controller of the workbench does not put the parent to sleep while its children spend. A child that its process does not know any more, or that does not answer a read for ten minutes, counts as lost; only reads count toward the ten minutes, so a child that answers reads is never lost, whatever its cancels do. A lost child stays in the tree of its parent with its last usage, because spend is spend, and it counts as neither open nor working there, so it keeps no run above it awake. Nothing reads or cancels it again, and the parent records it as lost in `fw.child.reported`, so a restart does not follow it either. A read that reaches it later, from a wait or a person, takes it back. Each read keeps the most that any read reported, field by field, and a child counts at least its own `usage`, whatever its `treeUsage` says. When a read shows that the tree of the child ended, that the child stopped or started to work, and at most once a minute while its usage grows, the kernel appends `fw.child.reported` to the parent. A restart of the parent rebuilds its tree from its own ledger: the children in this process from their `fw.run.queued`, the children in other processes from `fw.run.child`, and their usage and their state from the latest `fw.child.reported`. The new process reads in the background only a child that worked when the parent knew it last; a child that an older kernel recorded has no known state, and the new process does not read it. When a read shows that the tree of a run here ran out, the kernel cancels the open runs under that run (section 5.2).
 
@@ -1444,7 +1572,17 @@ No run of this process takes the id of a child in another process. `Start` and `
 
 The remote request carries the intersection of the child's effective named and inline tool profile with every ancestor's tools, resolved to literal patterns over the tools currently available to the parent. Opt-in tools require permission at every level. New or disconnected tools are not granted later to that child. An empty restricted intersection is refused; a tool-free unrestricted actor can delegate reasoning with a deny-all tool policy. The request also carries the conjunction of the base rules, ancestor rules, and the child's rules, plus its time zone. The receiving process applies its own policy on top. Remote spawning with a custom Go policy or `policy.external` is refused until a protocol can guarantee that policy's enforcement in the child; local children continue to use those policies.
 
-The driver `ax` runs each child in a child Task. It creates the Task through the `ax.v1alpha1.AX` gRPC service at `ax.server`, with the image, the command, the resources, the environment, and the workspaces of this Task, without the goals and without the debug services. The child gets `FW_PARENT_RUN`, `FW_PARENT_MEMBER`, the name of this Task as `ax:<atespace>/<task>`, `FW_SPAWN_MAX_DEPTH`, the remaining depth when positive or explicitly unlimited, and `FW_SPAWN_MAX_DESCENDANTS`, the runs that its share of the tree leaves under it, or the limit of this process for a branch. The child also gets the `egress` of this Task, so it reaches what its parent reaches and nothing more; ax creates the egress policy of the child actor from it before the child first runs (google/ax issue 449). An exhausted child gets `FW_SPAWN_DISABLED=true`, because a zero depth alone means unlimited; so does a child whose share has no room for more runs. Inherited depth variables of either spelling, the inherited share, and the inherited disabled flag are removed before setting the new values. The child loses the fleet name and URL of the parent, because it derives its own. ax creates every Task suspended, so the driver resumes the Task, waits until it runs, then starts the child run through the atenet router at `ax.router` with the static token of the fleet, the person of the parent, the id of the child run, and an idempotency key, and sends the request again while the child boots. It follows the run through the native API of the child, reads it once a second while a tool waits, and relays decisions and a cancel the same way. A child Task that never gets its run is deleted. A child Task that finished its run stays, for the ledger of the run; the suspend controller of the workbench puts it to sleep. The parent Task needs the ax server and the router in its egress policy. The name of a child Task is the name of this Task, cut to fit a DNS label, a hyphen, and the id of the child run in lower case, so `Plan` names the Task before it exists, and the idempotency key `spawn:<parent>:<atespace>/<task>` is the same for every start of one child. After a restart, `Find` reads the child Task on the ax API: a Task that does not exist, that ax deletes, or that failed holds no run that answers, and a Task that does not run is resumed for the look, as `Spawn` would have done; then `Find` reads the run through the router. `Abandon` deletes the child Task, and a Task that is gone already is no error. A create that fails can still have made the Task, for example when the call ends while the ax server works on it, so the driver deletes the Task then, with a context of its own.
+The driver `ax` runs each child in a child Task. It creates the Task through the `ax.v1alpha1.AX` gRPC service at `ax.server`, with the image, the command, the resources, the environment, and the workspaces of this Task, without the goals and without the debug services. The child gets `FW_PARENT_RUN`, `FW_PARENT_MEMBER`, the name of this Task as `ax:<atespace>/<task>`, `FW_SPAWN_MAX_DEPTH`, the remaining depth when positive or explicitly unlimited, and `FW_SPAWN_MAX_DESCENDANTS`, the runs that its share of the tree leaves under it, or the limit of this process for a branch. The child also gets the `egress` of this Task, so it reaches what its parent reaches and nothing more; ax creates the egress policy of the child actor from it before the child first runs (google/ax issue 449). An exhausted child gets `FW_SPAWN_DISABLED=true`, because a zero depth alone means unlimited; so does a child whose share has no room for more runs. Such a child cannot start a child, so the driver also removes from its egress every host with the name and the port of `ax.server`, whatever its scheme. The ax API has no authentication (section 11.11), and a process that reaches it can create, delete, and enter any Task. A wildcard host that covers the server stays, because it names other hosts too. Inherited depth variables of either spelling, the inherited share, and the inherited disabled flag are removed before setting the new values. The child loses the fleet name and URL of the parent, because it derives its own. ax creates every Task suspended, so the driver resumes the Task, waits until it runs, then starts the child run through the atenet router at `ax.router` with the static token of the fleet, the person of the parent, the id of the child run, and an idempotency key, and sends the request again while the child boots. It follows the run through the native API of the child, reads it once a second while a tool waits, and relays decisions and a cancel the same way. A child Task that never gets its run is deleted at once. A child Task whose runs ended stays for a while, so a person can still read their ledger, and the suspend controller of the workbench puts it to sleep. Then the parent removes it (below). The parent Task needs the ax server and the router in its egress policy. The name of a child Task is the name of this Task, cut to fit a DNS label, a hyphen, and the id of the child run in lower case, so `Plan` names the Task before it exists, and the idempotency key `spawn:<parent>:<atespace>/<task>` is the same for every start of one child. After a restart, `Find` reads the child Task on the ax API: a Task that does not exist, that ax deletes, or that failed holds no run that answers, and a Task that does not run is resumed for the look, as `Spawn` would have done; then `Find` reads the run through the router. `Abandon` deletes the child Task, and a Task that is gone already is no error. A create that fails can still have made the Task, for example when the call ends while the ax server works on it, so the driver deletes the Task then, with a context of its own.
+
+ax deletes no Task by itself: a Task has no owner, no label, and no time to live (section 11.11). So the process that creates the child Tasks also removes them, after `ax.childRetention` (`FW_AX_CHILD_RETENTION`), 24 hours by default. A negative retention keeps every child Task. A service of the `ax` package runs in a process that serves in a Task with the `ax` driver and that can start children. It lists the Tasks of the atespace of its Task 10 seconds after the start of the process and then every 15 minutes. It takes each Task whose `FW_PARENT_MEMBER` names its own Task. These are the children of this process, and also the children of an earlier process of the same Task whose ledger is gone, such as the Task before a roll of its pool. A child Task goes when it and every child Task below it, by the same variable, are due. The service deletes the lowest Task first, so a Task that stays never loses its parent. A child Task is due in three cases:
+
+- ax deletes it already. The service sends the delete again, because Substrate can refuse a delete while an actor resumes.
+- It failed before it ran, and it is older than the retention. A Task that failed after it ran can hold runs that nobody can read, so it stays, and a person decides.
+- It is older than the retention, and its `GET /v1/status` (section 11.8), read through the router with the static token, shows no open run, no run that works, and no storage failure. Its runs must also have ended at least the retention ago, by `idleSince`, unless it holds no run at all, because it never got its run.
+
+A read through the router wakes a Task that sleeps. So the service reads such a Task only after it slept for the whole retention, by the time that ax gives the condition `Ready` at a suspend. It resumes the Task through the ax API first, as `Find` does, so the phase on the ax API follows. A Task that stays while no run works there, for example because a run waits for a person, goes back to sleep at once, and the service reads it again only after another retention. One pass wakes at most eight Tasks. From the first wake to the end of the pass, the process holds itself busy (`Agent.Hold`), so the suspend controller does not put it to sleep in the middle. The clocks are the creation and the suspend of each Task on the ax API and the newest update of a run in the ledger of the child, so a restart of the parent loses none of them. The status counts the runs that the static token can view, so that token must see every run of a child, as it sees every run of a pool.
+
+The parent keeps what it recorded about a child that goes. `fw.run.child` and the latest `fw.child.reported` stay in its ledger, so the tree usage of the parent run still counts the child, and so does the usage of a spawn bridge, which is the tree usage of its manager run. `Children` of the parent leaves out a child that it cannot read, as for any child whose process does not answer, and a read of the child through the parent fails. The result of the child stays where the parent collected it, in the result of `spawn_task` or of `await_task`. The view of the workbench drops the child Task with its runs, as it drops any Task that leaves the Task list (the workbench architecture, section 4.1). Only a process of the parent Task removes its children, so the child Tasks of a Task that never runs again, for example after its pool shrank, stay until a person deletes them, and so do the children of a Task with an older kernel until its next start with this one.
 
 The native API lets a trusted caller, the static token or a workload, name the principal of a run in the body: `principal` and `principalKind`. The child Task gets the person of the parent this way. A person who names a principal starts the run as themself. A trusted caller also names the id of the run with `id`, an id of the shape that the kernel makes, so the child holds its run under the id that its parent recorded. The native API refuses `id` from anyone else, and answers 409 for an id that the process knows already.
 
@@ -1463,6 +1601,8 @@ These gaps exist in ax at commit 8d2ccf3, read on 2026-10-17. Each one maps to a
 - The stock marker directory `/ax` is not durable. `fw` writes its marker under `/workspace` (section 11.3).
 - Agent Substrate v0.4.0, read on 2026-10-14, suspends a Task with `SIGKILL` after it saves `/workspace`. No `SIGTERM` comes first. `fw` writes no `fw.run.suspended` event, and the working time of a run handles the missing event (section 11.5).
 - The egress gateway adds a credential of the egress policy to a request from any process of the sandbox, so a tool process reaches a credentialed host as `fw` does. The policy of `fw` does not bind such a call. Section 7.12 gives the pattern for untrusted input.
+- The ax API has no authentication. A process that reaches `ax.server` can create, delete, suspend, and enter any Task. So only a Task that starts child Tasks needs the API in its egress, and a child that cannot start children does not get it (section 11.9).
+- A Task has no owner, no label, and no time to live, and ax deletes no Task by itself. The `ax` driver removes its own child Tasks (section 11.9).
 
 ### 11.12 Guest services and `ax ssh`
 
@@ -1544,6 +1684,7 @@ A value in `fw.yaml` and in a profile file expands `${NAME}` and `${NAME:-defaul
 | `ToolLimits` | 256 KB in, 100 KB out, 10 min | your own numbers per tool | `tools.limits:` |
 | `PersonTokens` | none | the package `tokens`, a client of a token broker, or a linked package that keeps the grants of people, such as the workbench | `tokens.url:` or `Agent.SetPersonTokens` |
 | `Spawner` | children in this process | `ax`, a child Task per child; your own | `spawn.driver:` or `fw.WithSpawner` |
+| `Decider` | none, and a routine with questions and the tool `decide` need `deciders:` | `systemone`, the client of a System One server such as Clef or Jev, or your own | `deciders.<name>.driver:` or `fw.WithDecider` |
 
 ### 12.3 Middleware
 
@@ -1563,9 +1704,9 @@ Instructions reach the model in three layers, and every layer is a plain text:
 2. The instructions of the profile, under a heading, so one profile composes a base prompt with house rules.
 3. The instructions of the run, from the field `instructions` of the request, under their own heading.
 
-After the three layers, the system prompt lists the skills that the profile allows (see below). Last come the sections that tools add at the start of the run, such as the memory section (section 7.8), and the sentence `fw.ContextNote` when a tool added data to the first user message (section 7.8.2).
+After the three layers, the system prompt lists the skills that the profile allows (see below). Last come the sections that tools add at the start of the run, such as the memory section (section 7.8), the sentence `fw.ContextNote` when a tool added data to the first user message (section 7.8.2), and the sentence `fw.MessageNote` from the first message from another agent on (section 5.5). The digests below cover the text of the profile alone, so none of these parts changes them.
 
-A request can also carry an inline profile in the field `profile`. It overlays the named profile for that run. A set system prompt, model, effort, or time zone replaces the value. Its instructions follow the instructions of the named profile. A tool or skill list replaces the list. The policy becomes the stricter of the two, and the budget takes the set fields. The kernel stores the inline profile and the instructions in `fw.run.queued`, so a replay sees the same inline profile and the same instructions. A tool list in an inline profile can give a run tools that the tool list of its agent leaves out. The kernel names them in `extraTools` of `fw.run.queued` and of the run object, and leaves out a tool that an ancestor does not allow. Every surface tells the person. Under the first message, the conversation says "For this run only, reviewer can also run shell commands". The result of the MCP `run` tool ends with the same fact, and `fw run` prints it on standard error. The command line builds an inline profile from flags such as `--system`, `--tools`, and `--max-turns`.
+A request can also carry an inline profile in the field `profile`. It overlays the named profile for that run. A set system prompt, model, effort, or time zone replaces the value. Its instructions follow the instructions of the named profile. A tool, skill, or routine list replaces the list. The policy becomes the stricter of the two, and the budget and the block `compaction` take the set fields. The kernel stores the inline profile and the instructions in `fw.run.queued`, so a replay sees the same inline profile and the same instructions. A tool list in an inline profile can give a run tools that the tool list of its agent leaves out. The kernel names them in `extraTools` of `fw.run.queued` and of the run object, and leaves out a tool that an ancestor does not allow. Every surface tells the person. Under the first message, the conversation says "For this run only, reviewer can also run shell commands". The result of the MCP `run` tool ends with the same fact, and `fw run` prints it on standard error. The command line builds an inline profile from flags such as `--system`, `--tools`, and `--max-turns`.
 
 The kernel resolves the profile of a run once, when it queues the run, and records it in `fw.run.queued` as `resolved`, next to the inline profile of the request. The kernel reads the profile set once for the request, so a change in the middle of the start cannot split a run between two versions. The run uses the resolved profile for its life: in every turn, after a follow-up, after an approval, after a suspend, after a restart, and in a branch. A change to the profile through `Agent.SetProfiles`, in a file under `$FW_HOME/agents`, or in `fw.yaml` therefore reaches new runs only, and each run names the configuration that it ran with. The fields are these:
 
@@ -1576,7 +1717,9 @@ The kernel resolves the profile of a run once, when it queues the run, and recor
 | skills, tools | the allowlists of the overlay |
 | time zone | the overlay, else the zone of the parent, else `time.zone`; `fw.run.started` records the zone that wins (section 5.8) |
 | budget | the budget of the overlay, with each zero field taken from `budget:` in `fw.yaml`; the budget of the request stays in its own field and wins over it |
+| compaction | the block `compaction` of the overlay over the block of the configuration: `at`, the size that starts a compaction, `off` when the run never compacts, and `model` as a selector, empty for the model of the run (section 5.4) |
 | policy | the rules of the overlay, with the rules of the named profile now on top as a tightening (section 7.5) |
+| routines | the routines of the overlay, whole (section 22.1) |
 | system prompt, instructions | not the text, only its digests, `systemDigest` and `instructionsDigest` (below) |
 | description, access | never part of it |
 
@@ -1595,13 +1738,13 @@ The kernel reads some parts of a run as they are now, because they are not confi
 
 A run from the ledger of an older kernel has no resolved profile and reads the named profile at each step. A fleet can mix kernels. A process of an older kernel that takes a branch through `POST /v1/runs/fork` ignores `resolved` and runs the branch with its own profile, as it reads the named profile at each step.
 
-A skill is a directory with a `SKILL.md` file whose front matter names and describes it. The skills live under `$FW_HOME/skills`, or under the directories in `tools.skills`, and under the ax Workspace skills path. The system prompt lists the skills that the profile allows, one line each. The `skill` tool returns the body of one skill and the list of its other files. The MCP server of the workbench serves the same files as resources under `fw://skills/<name>`. A profile with no `skills` entry sees every skill, and a profile with an empty list sees none.
+A skill is a directory with a `SKILL.md` file whose front matter names and describes it. The description is one line of at most 300 bytes. The kernel reads a YAML block scalar, folded (`>`) or literal (`|`), as its text. The skills live under `$FW_HOME/skills`, or under the directories in `tools.skills`, which replace it, and under the path `spec.skills.path` of each Workspace of an ax Task, relative to its binding when it is not absolute. The kernel reads them in that order, and the first directory that holds a name wins. A skill of the process therefore shadows a skill of a Workspace with the same name: the configuration of the operator wins over the files that a Task brings, so a Workspace cannot replace a skill that the operator vetted. An MCP server adds skills under the names `<server>/<name>` (section 7.3, Skills of a server). The system prompt lists the skills that the profile allows, one line each: the skills of the directories, sorted by name, then the skills of each server in the order of `tools.mcp`, each with the name of its server. The `skill` tool returns the body of one skill and the list of its other files, and its field `file` returns one of those files. It reads only a skill that the profile of the run allows. The MCP server of the workbench serves the same files as resources under `fw://skills/<name>`. A profile with no `skills` entry sees every skill, and a profile with an empty list sees none.
 
 ### 12.6 Driver registry
 
 Each driver registers itself by name at init, for example `fw.RegisterBus("nats", nats.New)`. A third-party Go module adds a driver by being imported. A blank import in `cmd/fw/drivers.go` selects the drivers that the default binary includes. A custom build leaves out a driver by leaving out its import.
 
-A linked package can also change the default configuration. It calls `fw.RegisterDefaults(func(*fw.Config))` in `init`. `DefaultConfig` applies the changes after the kernel defaults, in the order of registration. A file or a variable still overrides the result. The workbench uses it to add the surface `mcp` and the tool `propose_agent` (the workbench architecture, section 1.1). In the same way, `fw.RegisterExtension` claims a configuration block (section 12.1), `fw.RegisterRunAnnotator` adds a run annotator, `fw.RegisterService` adds a service (section 12.4), `fw.RegisterSpawner` adds a spawner driver (section 11.9), `metrics.RegisterCollector` adds series to the metrics surface (section 10.1), `cli.RegisterDoctorCheck` adds a line to `fw doctor`, `Kit.SetRelay` of the native surface sets the relay for the runs of other processes (section 12.8), and `Agent.SetPersonTokens` gives the tool sources the tokens of people (section 7.11).
+A linked package can also change the default configuration. It calls `fw.RegisterDefaults(func(*fw.Config))` in `init`. `DefaultConfig` applies the changes after the kernel defaults, in the order of registration. A file or a variable still overrides the result. The workbench uses it to add the surface `mcp` and the tool `propose_agent` (the workbench architecture, section 1.1). In the same way, `fw.RegisterExtension` claims a configuration block (section 12.1), `fw.RegisterRunAnnotator` adds a run annotator, `fw.RegisterService` adds a service (section 12.4), `fw.RegisterSpawner` adds a spawner driver (section 11.9), `fw.RegisterDecider` adds the client of a decider (section 22.2), `metrics.RegisterCollector` adds series to the metrics surface (section 10.1), `cli.RegisterDoctorCheck` adds a line to `fw doctor`, `Kit.SetRelay` of the native surface sets the relay for the runs and the profiles of other processes (section 12.8), and `Agent.SetPersonTokens` gives the tool sources the tokens of people (section 7.11).
 
 ### 12.7 Out-of-process extension
 
@@ -1618,7 +1761,19 @@ The package `fw` is the main public package. It holds the interfaces above, the 
 - `cli` holds the command line. `cli.Run` runs a verb. A binary sets function variables such as `cli.NewLogger`, `cli.CardJSON`, and `cli.ServeMCPStdio` for the packages that it links. A nil variable turns off what needs it.
 - `surface/native` is the extension point of the native API. `native.Extend` registers an `Extension`, and `native.New` mounts each one after the run routes. `native.NewWith(exts...)` mounts only the given ones.
 
-An extension gets a `*native.Kit`. The kit has `Agent`, `Handle` (behind authentication), `HandlePublic`, and `SetSigninPath`. It also has the helpers of the run routes: `Remote`, `OwnerOf`, `Forward`, `Start`, `Fail`, `Decode`, and `DecodeFiles`. The package also exports `WriteProblem`, `WriteJSON`, `Accepts`, `Cause`, `Attachments`, the type `FileBody`, and the limits `DefaultEventsLimit` and `MaxEventsLimit`.
+An extension gets a `*native.Kit`. The kit has `Agent`, `Handle` (behind authentication), `HandlePublic`, `SetSigninPath`, and `SetRelay`. It also has the helpers of the run routes: `Remote`, `Start`, `Fail`, `Decode`, and `DecodeFiles`. The package also exports `WriteProblem`, `WriteJSON`, `Accepts`, `Cause`, `Attachments`, the type `FileBody`, and the limits `DefaultEventsLimit` and `MaxEventsLimit`. The names of its headers are `HeaderIdempotencyKey` and `HeaderOnBehalfOf` (section 8.2).
+
+A relay (`native.Relay`) answers a request about what another process holds. An extension sets it with `Kit.SetRelay`, and the last one to set it wins. The surface calls its method `Take(w, r) bool` before the handler of each route of one run, and before `POST /v1/runs`. When `Take` answered the request, it returns true. `Kit.Remote` wraps a route of an extension in the same way.
+
+A relay can also answer `GET /v1/agents/{name}` for a profile that another process runs, such as the profile of a pool of workers of a fleet. The process of the surface holds no such profile, so its own lookup answers 404. For this route the relay implements the optional interface `native.AgentRelay`:
+
+```go
+type AgentRelay interface {
+    TakeAgent(w http.ResponseWriter, r *http.Request, name string) bool
+}
+```
+
+The surface checks the relay for this interface. It calls `TakeAgent` after the authentication of the caller and before its own lookup, with the path value `name`. When `TakeAgent` answered the request, it returns true. With false, the kernel answers as it does without a relay. The kernel checks no right before the call. So the relay checks the rights of the caller itself. It answers a name that the caller cannot view with a 404, as the kernel does. Without a relay, or with a relay that does not implement `AgentRelay`, the route does not change.
 
 Semantic versioning applies to these three packages. A sketch of `fw`:
 
@@ -1672,9 +1827,29 @@ func (a *Agent) RunBudget(ctx context.Context, id string) (Budget, error)
 func (a *Agent) ChangeBudget(ctx context.Context, id string, change Budget, origin string) (Budget, error)
 
 // Send adds a follow-up message to a run (section 5.5). WithSendBudget
-// changes the budget of the run before the message.
+// changes the budget of the run before the message. WithMessageFrom names
+// the party that a trusted caller relays the message for, and
+// WithMessagePinned keeps the message through every compaction.
 func (a *Agent) Send(ctx context.Context, id string, msg Message, origin string, opts ...SendOption) error
 func WithSendBudget(b Budget) SendOption
+func WithMessageFrom(f MessageFrom) SendOption
+func WithMessagePinned() SendOption
+
+// WithActingFor names the person for whom the caller in ctx acts, so the
+// records of the action name that person (section 8.2). Only the process,
+// the static token, or a workload acts for another person. The kernel
+// still authorizes the caller alone. ActingFor reads the person back.
+func WithActingFor(ctx context.Context, subject string) (context.Context, error)
+func ActingFor(ctx context.Context) string
+
+// Live streams the text of a run as the model produces it: delta, tool,
+// done, and idle events, never in the ledger (section 5.1).
+func (a *Agent) Live(ctx context.Context, id string) (<-chan LiveEvent, error)
+
+// React records the reaction of a person on an event of a run as
+// fw.run.reacted. A thumb on the end of a completed episode is also a
+// quality receipt (section 8.2).
+func (a *Agent) React(ctx context.Context, id string, d ReactionData) error
 
 // Following counts the children in other processes that work; the
 // process is not idle while one does (section 11.9).
@@ -1682,6 +1857,14 @@ func (a *Agent) Following() int
 
 // TitleFrom makes a short title from the input of a run (section 8.2).
 func TitleFrom(input string) string
+
+// WithCheck makes a run a check run: the kernel makes the tool calls of
+// the check under the policy of the agent and calls no model (section
+// 23). Resolved fills the defaults of a check and names its first
+// problem. Kind is RunKindCheck for a check run.
+func WithCheck(c Check) RunOption
+func (c Check) Resolved() (Check, error)
+func (r *Run) Kind() string
 
 // Run options: AsAgent, WithInstructions, WithRunProfile, WithRunBudget,
 // WithParent, WithMetadata, WithIdempotencyKey, WithOrigin, and
@@ -1796,10 +1979,12 @@ The command line mirrors the API. Each command is one verb.
 | `fw env` | Print every configuration variable, and the value of each one that is set |
 | `fw agents [name]` | List the profiles or print one. `put` and `delete` come with `fw-workbench`. |
 | `fw whoami` | Print the local principal that the commands use |
+| `fw routine replay --routine r.yaml [--ledger dir] [--agent name] [--decide] [--json]` | Check a routine against the runs of a ledger (section 22.4) |
+| `fw routine propose --agent name [--ledger dir] [--runs ids] [--out r.yaml] [--name n] [--decider d] [--json]` | Make a routine from the runs of an agent (section 22.4). A build with the tag `lean` leaves it out, and the tag `propose` brings it back. |
 
 `fw-workbench` takes every verb above. It adds `fw-workbench mcp`, which serves the MCP server over stdio (the workbench architecture, section 3). In `fw`, the verb `mcp` fails with a message that names `fw-workbench mcp`.
 
-`fw doctor` starts each line with `ok`, `warn`, or `FAIL`. A `FAIL` line is a problem, and the exit code is then 1. A `warn` line names a risk of a setup that works, and the exit code stays 0. Two checks warn: no model in the configuration, because the process then refuses every run, and the memory scope `agent` inside an ax Task, because each person then reads the notes that the runs of other people wrote (section 7.8.1). The memory line names the scope, the index, and the notes of the profile `default` in the directory of that scope: under `principal`, the notes of all people together and the notes of the runs without a principal. Inside a Task, an empty `tools.memory.scope` counts as `principal`, as `ax.ApplyToConfig` sets it for `fw serve`.
+`fw doctor` starts each line with `ok`, `warn`, or `FAIL`. A `FAIL` line is a problem, and the exit code is then 1. A `warn` line names a risk of a setup that works, and the exit code stays 0. Three checks warn: no model in the configuration, because the process then refuses every run, the memory scope `agent` inside an ax Task, because each person then reads the notes that the runs of other people wrote (section 7.8.1), and a memory directory whose walk stops at its bound, because the counts are then too low. The memory line names the scope, the index, and the notes of the profile `default` in the directory of that scope: under `principal`, the notes of all people together and the notes of the runs without a principal. Inside a Task, an empty `tools.memory.scope` counts as `principal`, as `ax.ApplyToConfig` sets it for `fw serve`.
 
 `fw run` shapes the run from flags without a configuration change. `-system` and `-i` take a text or `@path` to a file, and `-tools` and `-skills` take globs. `-model`, `-effort`, `-time-zone`, `-max-turns`, `-deadline`, and `-max-tool-calls` set the rest. The flags build an inline profile (section 12.5). When a run stops at a budget, `fw run` names the limit and the flag or key that raises it.
 
@@ -1812,6 +1997,8 @@ The command line mirrors the API. Each command is one verb.
 Every surface authenticates every request with the `Authn` plug and puts the principal in the request context. A principal has a subject, a name, a kind, an issuer, groups, and scopes. The kinds are `user`, `workload`, `token`, `local`, and `anonymous`. A `user` is a person, from an OIDC token. A `workload` is a service or another agent, from a SPIFFE identity. `token` is the static bearer token of the process, and `local` is the user of the process, over stdio. `anonymous` has no credential, and it comes from `auth.mode: none`.
 
 `auth.mode` names one mode, or several separated by commas that are tried in order, for example `oidc,spiffe,token`. The first mode that accepts the credential wins, and the first mode writes the challenge.
+
+A refused request gets a 401 with the challenge, and the log gets one line at level info, `request refused without a valid credential`. The line holds the method, the route pattern, the path, the reason, and `node`, the name of the process, so the log of several replicas says which one refused. The reason is `no credential` for a request without an `Authorization` header and without a client certificate. Otherwise it names the reason of each mode, such as `oidc: token expired; token: the bearer token is not the static token`. No token and no other value of a header enters the line. For each method, route, and reason, at most one line goes out per minute, and the next line counts the refusals that the log left out in `skipped`. A client that loops on a 401 therefore writes one line a minute.
 
 | Mode | Credential | Subject |
 |---|---|---|
@@ -1842,7 +2029,7 @@ Each entry names principals in one of five forms:
 
 The process-wide block `access` holds `admins`, who own every agent, `creators`, who can add agents, and `default`. With `default: open`, which is the default, an agent that has no `access` block is open to every authenticated principal as an operator. That is how fw behaved before access existed. With `default: closed`, such an agent is reachable by its admins only. A deployment therefore turns identity on in two steps: set `auth.mode` and `access.admins`, then switch `access.default` to `closed` once every agent names its owners.
 
-The kernel enforces this through the `Authz` plug on every call that carries a principal. A run on an agent needs the operator role, and a read of a run needs the viewer role or the run itself. A decision, a cancel, or a change of the budget needs the operator role or the run itself, and a profile change needs the owner role. A call that carries no principal comes from the process itself, such as a tool that starts a child run, and is trusted. A tool that reads runs for the run that called it, such as `recall`, puts the principal of that run in the context of its reads (`fw.WithRunPrincipal`), so the kernel decides them as reads of the person who started the run, not as calls of the process (section 7.8.3). The routes of the memory follow the same roles, and a note of the scope `shared`, which every profile reads, needs an admin (section 8.2). A target can name another process that holds the agent and the run, a member of the fleet of the workbench (the workbench architecture, section 4). The default rules refuse such a target, because they do not know the rules of another process. The default `Authz` is the rules above, and `fw.WithAuthz` replaces it with a policy of your own. `fw.WithAuthzFrom` builds one from the agent once the agent has its configuration and its bus; the workbench uses it to hand the decisions to a control plane outside the process (section 13.5 and the workbench architecture, section 12). A worker kernel in a fleet decides with the rules above alone.
+The kernel enforces this through the `Authz` plug on every call that carries a principal. A run on an agent needs the operator role, and a read of a run needs the viewer role or the run itself. A decision, a cancel, or a change of the budget needs the operator role or the run itself, and a profile change needs the owner role. A trusted relay can name the person it acts for (section 8.2). The kernel still decides for the relay, and the named person reaches no decision. A call that carries no principal comes from the process itself, such as a tool that starts a child run, and is trusted. A tool that reads runs for the run that called it, such as `recall`, puts the principal of that run in the context of its reads (`fw.WithRunPrincipal`), so the kernel decides them as reads of the person who started the run, not as calls of the process (section 7.8.3). The routes of the memory follow the same roles, and a note of the scope `shared`, which every profile reads, needs an admin (section 8.2). A target can name another process that holds the agent and the run, a member of the fleet of the workbench (the workbench architecture, section 4). The default rules refuse such a target, because they do not know the rules of another process. The default `Authz` is the rules above, and `fw.WithAuthz` replaces it with a policy of your own. `fw.WithAuthzFrom` builds one from the agent once the agent has its configuration and its bus; the workbench uses it to hand the decisions to a control plane outside the process (section 13.5 and the workbench architecture, section 12). A worker kernel in a fleet decides with the rules above alone.
 
 ### 13.3 Managing agents
 
@@ -1865,7 +2052,7 @@ The actions `agent.create`, `agent.edit`, and `agent.delete` stay in the kernel,
 - Tool limits bound every call: 256 KB in, 100 KB out, and 10 minutes, per tool and per configuration. A large data source cannot flood the context window.
 - A child run never has more than its parent: fewer tools, stricter rules, a smaller budget, and a bounded depth and count.
 - An inline profile on a request never carries an `access` block, so a request cannot grant itself a role. Its tool list can give a run more tools than its agent lists, and every surface says so (section 12.5).
-- The principal of a run and the decider of an approval are in the ledger, so every action has a name on it.
+- The principal of a run and the decider of an approval are in the ledger, so every action has a name on it. For an action that a trusted relay makes for a person, the name is that person (section 8.2).
 - A control plane that does not answer never opens access. With `policy.external`, the tool call is denied. An `Authz` that reports `fw.ErrAuthzUnavailable`, such as the control-plane authorization of the workbench, gets a 503 for the caller.
 
 Do not set `auth.mode: none` on a listener that is reachable from outside the cluster. Anyone who reaches the port can start runs and approve tool calls. Do not set `access.default: closed` without an entry in `access.admins`, or nobody can manage the agents until the configuration changes.
@@ -1997,9 +2184,12 @@ model/anthropic/        default adapter
 model/gemini/           Gemini adapter
 model/openai/           OpenAI-compatible adapter
 tools/builtin/          bash, files, http, memory, recall, skill, clock, ask_user,
-                        send, spawn_task, await_task
+                        send, spawn_task, await_task, decide
 memory/                 the memory store: notes, scopes, limits, audit, recall,
                         and the optional FTS5 index (tag memory_sqlite)
+routine/                replay and propose of routines over recorded runs (section 22.4),
+                        propose only without the tag lean, or with the tag propose
+decider/systemone/      the client of a System One server, the decider driver "systemone"
 tools/mcp/              MCP client as a ToolSource, a decision point, and a Connector
 tools/a2a/              A2A peers as a ToolSource
 bus/nats/ bus/redis/
@@ -2007,7 +2197,8 @@ surface/native/         the native API for runs and agents, and its extension po
 surface/a2a/ surface/metrics/
 surface/axmeta/         the ax metadata endpoints on a loopback listener
 surface/view/           the shapes that the native routes return
-ax/                     runner contract: manifests, workspace setup, supervision
+ax/                     runner contract: manifests, workspace setup, supervision,
+                        and the child Tasks of spawn.driver ax with their sweep
 ax/guest/               the guest services of ax ssh
 telemetry/              Prometheus registry, OpenTelemetry setup, slog
 examples/               fw.yaml, ax manifests, observability, prompts, skills
@@ -2020,7 +2211,7 @@ The workbench architecture, section 1.3, gives the layout of the workbench.
 
 ## 15. Dependencies
 
-The default binary carries these modules. The blank imports of `cmd/fw/drivers.go` and `cmd/fw/driver_*.go` link the drivers. Without a build tag the binary carries every driver. With the tag `lean` it carries the core alone, the configuration loader, the native API, the built-in tools, the MCP client, the token client of the fleet, and the telemetry, and each driver comes back with its own tag: `nats`, `redis`, `anthropic`, `openai`, `gemini`, `spiffe`, `oidc`, `metrics`, and `a2a`. A worker image for one fleet therefore builds with the drivers it uses inside ax, for example `go build -tags lean,nats,openai,oidc ./cmd/fw`, or `docker build --build-arg TAGS=lean,nats,openai,oidc`, and the Makefile takes `TAGS`. The full binary is about 82 MB; the lean core is about 38 MB, and a worker with NATS, OpenAI, and `oidc` about 41 MB. A configuration that names a driver that the build left out stops at start with the name of the driver, except a surface or a built-in tool, which the kernel skips with a warning. One tag adds a capability and no driver: `memory_sqlite` adds the SQLite FTS5 index of the memory (section 7.8.3) from the pure-Go `modernc.org/sqlite`, in the full and in the lean build alike, for about 4 MB; without it, the memory scans the notes. The ax manifest types are defined in the `ax` package from the YAML schema, so the binary does not import the ax module. Unencrypted HTTP/2 on one port comes from the standard library `http.Server.Protocols` field.
+The default binary carries these modules. The blank imports of `cmd/fw/drivers.go` and `cmd/fw/driver_*.go` link the drivers. Without a build tag the binary carries every driver. With the tag `lean` it carries the core alone, the configuration loader, the native API, the built-in tools, the MCP client, the token client of the fleet, the System One client of the deciders, and the telemetry, and each driver comes back with its own tag: `nats`, `redis`, `anthropic`, `openai`, `gemini`, `spiffe`, `oidc`, `metrics`, and `a2a`. A worker image for one fleet therefore builds with the drivers it uses inside ax, for example `go build -tags lean,nats,openai,oidc ./cmd/fw`, or `docker build --build-arg TAGS=lean,nats,openai,oidc`, and the Makefile takes `TAGS`. The full binary is about 82 MB; the lean core is about 38 MB, and a worker with NATS, OpenAI, and `oidc` about 41 MB. A configuration that names a driver that the build left out stops at start with the name of the driver, except a surface or a built-in tool, which the kernel skips with a warning. One tag adds a capability and no driver: `memory_sqlite` adds the SQLite FTS5 index of the memory (section 7.8.3) from the pure-Go `modernc.org/sqlite`, in the full and in the lean build alike, for about 4 MB; without it, the memory scans the notes. The tag `lean` also leaves out `fw routine propose`, which reads many runs, the work of the workbench or of a librarian over a ledger, not of a worker. The tag `propose` brings the verb back (section 22.4). `fw routine replay` stays in every build. The ax manifest types are defined in the `ax` package from the YAML schema, so the binary does not import the ax module. Unencrypted HTTP/2 on one port comes from the standard library `http.Server.Protocols` field.
 
 | Module | Used for |
 |---|---|
@@ -2255,7 +2446,7 @@ The line `environment` names:
 - whether `uv` and `pixi` are on PATH, with their versions, for the managers that the block needs;
 - the hosts that the egress policy of the Task must let through, from the URLs in the lock files: `tls pypi.org` for an https host, which needs a rule with tls passthrough, and `http deb.debian.org` for a plain http host. Without a lock file it names the default registry: `pypi.org` and `files.pythonhosted.org` for uv, `conda.anaconda.org` for pixi. Without `python3` on PATH it adds `releases.astral.sh`, where uv downloads a Python. `download.pytorch.org` appears when the lock of uv uses the PyTorch index.
 
-The kernel cannot add an egress rule. A person adds the rules to the Task. A failed state or a missing manager fails the line.
+The kernel cannot add an egress host. A person adds the hosts to the Task. A failed state or a missing manager fails the line.
 
 ### 18.10 `fw env dockerfile`
 
@@ -2349,7 +2540,7 @@ The host records the steps of a session with the events of the turn loop, so the
 
 An exchange without its `fw.idle` was cut by a stop of the process. The next driver continues it (19.5).
 
-A message without text, such as a blank follow-up or a note of the kernel, gives the harness nothing: the host records `fw.prompt` and `fw.idle` for it at once, and no `fw.brief`, and finishes the run again. A message with attachments alone gets a text that names the files, such as `attachments/notes.txt`, which the harness reads in the directory of the run. A finished run stays finished until a follow-up reopens it. A run with a rubric (section 20) records `fw.outcome.evaluated` with the verdict `skipped` and the reason `a hosted harness has no grader` before it completes, once for each answer.
+A message without text, such as a blank follow-up or a note of the kernel, gives the harness nothing: the host records `fw.prompt` and `fw.idle` for it at once, and no `fw.brief`, and finishes the run again. A message with attachments alone gets a text that names the files, such as `attachments/notes.txt`, which the harness reads in the directory of the run. A message from another agent (section 5.5) reaches the harness inside its `<message>` block, and from that message on the added system text of the harness ends with `fw.MessageNote`. A finished run stays finished until a follow-up reopens it. A run with a rubric (section 20) records `fw.outcome.evaluated` with the verdict `skipped` and the reason `a hosted harness has no grader` before it completes, once for each answer.
 
 opencode reports the usage of a model call when the call ends, after its tool calls ran, while the kernel records a call that asks a person before it runs. Such a model call therefore gets its `fw.model.responded` with no usage at the first permission request, and its usage follows as `fw.run.annotated` with the usage, the provider, and the model. The usage, the cost, the budget, and the metrics count it in the same way (section 8.2). The model calls of a subagent count the same way and are not turns of the run.
 
@@ -2407,7 +2598,7 @@ The instructions of the run go to the harness as its added system text: `system`
 - The system prompt and the instructions of a profile do not reach the harness, only the instructions of the run. Attachments stay files in the directory `attachments` of the run: a message with attachments alone names them, and a message with text does not. The MCP servers of `tools.mcp` do not reach the harness yet. The terminal route of docs/REVIEW_2026-10-20.md, section 4.9, for `opencode attach` and `claude --resume` by a person, is not built yet.
 - The usage of a model call that a stop of the process cut is lost.
 - The memory server (19.10) is a route of the native API on a plain HTTP listener. A process that cannot serve it, such as `fw run`, which serves nothing, a listener with TLS, or a configuration without the surface `native`, gives opencode the memory section and the index without the server (19.10).
-- A memory call of Claude Code runs only after its `PreToolUse` hook arms it. A version of Claude Code that does not send the hook for an MCP tool gets an error for each memory call, never an unchecked call. The settings of each process reject an entry named `fw-memory` in the `.mcp.json` of the repository with `disabledMcpjsonServers`. The documentation of Claude Code says that the setting acts on the servers of `.mcp.json` alone, so it leaves the server of `--mcp-config`; this is not verified against a running Claude Code.
+- A memory call of Claude Code runs only after its `PreToolUse` hook arms it. A version of Claude Code that does not send the hook for an MCP tool gets an error for each memory call, never an unchecked call. The settings of each process reject an entry named `fw-memory` in the `.mcp.json` of the repository with `disabledMcpjsonServers`. The documentation of Claude Code names this setting as the guard that blocks a server of `.mcp.json` in every permission mode, also in `-p`, where Claude Code loads such a server without asking. A check with Claude Code 2.1.309 in `-p` mode, with an API on the loopback address that answers no model call, confirms it. The server of `--mcp-config` connects with the source `dynamic`, and a server named `fw-memory` in `.mcp.json`, in the local scope, or in the user scope never starts, with the setting or without it, also when the settings of the repository approve the `.mcp.json` server. Without `--mcp-config`, the `.mcp.json` server connects, and the setting rejects it. The documentation does not state the precedence of `--mcp-config`, so the setting stays. `--strict-mcp-config` would hold too, but it drops every other server of the repository, so the harness does not pass it.
 - A search of the memory server reaches the files of the workspace only when the run works in the root of the workspace, because the host has no workspace of a run directory to hand to the store yet.
 - opencode merges the configuration of the project and of its `.opencode` directories with the inline configuration key by key, so the host cannot remove an entry `fw-memory` of the project before the merge. opencode 1.19 merges the inline configuration last, so its keys win, and a key that only the project sets stays. The host therefore checks the entry of each session instead (19.10).
 - `fw.tool.requested` records the input of a memory call, the text of a note included, as the turn loop does for the tool `memory`; `fw.memory.changed` holds no text.
@@ -2594,7 +2785,7 @@ The Workspace holds `.fw/fw.yaml`, which the kernel reads under ax (section 11.3
 
 The Task gets `spec.env` in this order: the static token when `auth.mode` holds `token`, the key of each model provider, the bearer of each MCP server, the credential for the token broker, the OTLP endpoints of the caller (`OTEL_EXPORTER_OTLP_ENDPOINT` and the endpoint of each signal), and the entries of `--env`. A secret takes its value from `--env`, else from the secrets driver of the caller. `render` prints a placeholder for each one, and for each `--env` entry with a secret name, and warns when the caller does not have a value. `up` refuses to start until every value is there.
 
-The egress rules come from the endpoints of the configuration of the Task, so no rule is forgotten: the base URL of each model provider, or the default endpoint of the adapter; each URL of the bus; `tokens.url`; the OTLP endpoints; and the endpoint of each MCP server. A child Task of `spawn.driver: ax`, an A2A peer, and an OIDC issuer need a rule from `--egress`. A plain `http` or `ws` URL gives an `http` rule and an `https`, `wss`, or `rediss` URL a `tls` passthrough rule, each for one host and its port. `--egress` adds more. The same rule appears once. An endpoint that no rule can carry gives a warning instead: a scheme such as `nats://` or `redis://`, because the egress gateway carries only HTTP and TLS, and `localhost` or an IP address, because a rule names a DNS name.
+The hosts of `spec.egress` come from the endpoints of the configuration of the Task, so none is forgotten: the base URL of each model provider, or the default endpoint of the adapter; each URL of the bus; `tokens.url`; the OTLP endpoints; and the endpoint of each MCP server. A child Task of `spawn.driver: ax`, an A2A peer, and an OIDC issuer need a host from `--egress`. A plain `http` or `ws` URL gives an `http://` host, and an `https`, `wss`, or `rediss` URL a plain host, which is TLS that the gateway forwards without decryption, each with its port. `--egress` adds more: an entry as `spec.egress.hosts` takes it, a host for TLS on port 443, `http://host[:port]`, or `https://host[:port]`, or a `ws`, `wss`, or `rediss` URL. The same host appears once. An endpoint that no host can carry gives a warning instead: a scheme such as `nats://` or `redis://`, because the egress gateway carries only HTTP and TLS, and `localhost` or an IP address, because a host is a DNS name.
 
 ### 21.3 up, status, events, and down
 
@@ -2609,17 +2800,191 @@ A sandbox hides facts that the configuration does not show. `cli/doctor_ax.go` a
 | Line | What it checks | Verdict |
 |---|---|---|
 | `ax reach` | Each endpoint of section 21.2, with the MCP servers of the Workspaces. An `http` endpoint gets one GET without a credential, and any answer but the refusal of the egress gateway, a 403 with the body `egress denied`, passes. A `tls` endpoint gets a TLS handshake, which the gateway ends when no rule covers the name. Each probe has five seconds at most, and the probes run at the same time. | FAIL when an endpoint does not answer, with each endpoint and the fix |
-| `ax trust bundle` | The bundle of the egress gateway at `/run/ate/egress-trust-bundle/trust-bundle.pem`, where a SystemInfo volume puts it in `docs/egress-trust-bundle.md` of Agent Substrate. ax mounts no such volume yet, and an `https` rule needs the bundle, because the gateway terminates its TLS. | ok with the limit while the file is absent, because nobody in the Task can change it; ok with the number of certificates; FAIL when the file holds no certificate |
+| `ax trust bundle` | The bundle of the egress gateway at `/run/ate/egress-trust-bundle/trust-bundle.pem`, where a SystemInfo volume puts it in `docs/egress-trust-bundle.md` of Agent Substrate. ax mounts no such volume yet, and an `https://` host needs the bundle, because the gateway terminates its TLS. | ok with the limit while the file is absent, because nobody in the Task can change it; ok with the number of certificates; FAIL when the file holds no certificate |
 | `ax tools user` | The user that runs the tools, as `ax.ApplyToConfig` chooses it, and whether it is a separate user from the one of `fw`. | ok with the reason when no separate user is in effect; FAIL when `tools.user` names a user that root cannot become |
 | `ax durable` | `FW_HOME` is under `/workspace` and writable, `/workspace` is a mount in `/proc/self/mountinfo`, and every binding is under it. | FAIL with each problem |
 
 Example lines for a Task of the lab in gVisor, with one egress rule missing:
 
 ```
-FAIL  ax reach: 1 of 5 endpoints does not answer: mcp github github-mcp.fw-fleet.svc.cluster.local:8082 (the egress gateway denies it); fix the egress of the Task (fw ax render derives a rule for each endpoint); these answer: model openai ax-model.fw-fleet.svc.cluster.local:8080, bus nats.fw-fleet.svc.cluster.local:8080, tokens fw-front.fw-fleet.svc.cluster.local:8080, telemetry opentelemetry-collector.otel-system.svc.cluster.local:4318
-ok    ax trust bundle: absent at /run/ate/egress-trust-bundle/trust-bundle.pem; https egress rules need the SystemInfo volume there, so use http and tls rules
+FAIL  ax reach: 1 of 5 endpoints does not answer: mcp github github-mcp.fw-fleet.svc.cluster.local:8082 (the egress gateway denies it); fix the egress of the Task (fw ax render derives a host for each endpoint); these answer: model openai ax-model.fw-fleet.svc.cluster.local:8080, bus nats.fw-fleet.svc.cluster.local:8080, tokens fw-front.fw-fleet.svc.cluster.local:8080, telemetry opentelemetry-collector.otel-system.svc.cluster.local:4318
+ok    ax trust bundle: absent at /run/ate/egress-trust-bundle/trust-bundle.pem; https:// hosts of spec.egress need the SystemInfo volume there, so use http:// and plain hosts
 ok    ax tools user: the tools run as root (0), the user of fw, because root lacks CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_SETGID, CAP_SETUID in this sandbox; no separate user is in effect, so a tool process can read the files of fw
 ok    ax durable: FW_HOME /workspace/.fw is writable on the volume at /workspace, with 1 binding on it
 ```
 
 The trust bundle line counts the certificates once an ax patch mounts the SystemInfo volume at that path. The line of the kernel `tools user` names the default of ax only for root with the capabilities of section 7.12, as `ax.ApplyToConfig` does, and the `ax tools user` line adds whether the user is a separate one.
+
+## 22. Routines
+
+A routine is a vetted sequence of tool calls that the kernel runs in place of the model. It has a decision schema, steps, checks afterward, and an answer. `docs/ROUTINES.md` is the contract between the kernel, the workbench, the page, and the lab. The workbench stores the routines, collects the evidence, and changes the standing. The kernel runs what the profile says and records what happened.
+
+### 22.1 The routine and the profile
+
+A profile carries its routines in `routines`, as `fw.Routine` values. A routine has these fields:
+
+| Field | Meaning |
+|---|---|
+| `name`, `version` | 1 to 64 of `a-z`, `0-9`, and `-`, unique per agent, and a positive integer |
+| `standing` | `shadow` or `live` |
+| `canary` | for a live routine, the share of the runs that the agent handles anyway. Without it, the share is 0.05. |
+| `decider` | a key of `deciders`, for a routine with questions |
+| `questions` | the decision schema: a type (`choice`, `noul`, or `score`), instructions, criteria, the band `act`, the expected answers `expect`, and `observe`. The criteria of a `noul` are absent or name `true` and `false` only. |
+| `steps` | the tool calls in order, each with an input, an optional `as`, and an optional `compare`, the keys that a replay compares |
+| `after` | the checks afterward: a call, with the substrings that its result holds (`contains`) and lacks (`lacks`) |
+| `answer` | after a routine that completes, the output of the run |
+
+The inputs, the answer, and the strings of `contains` and `lacks` are Go `text/template` texts. The data holds `.input`, `.json`, `.meta`, one field per question, and one field per step with `as`. The functions are `find`, `json`, and `lower`. The built-in functions of `text/template`, such as `printf`, `if`, and `eq`, stay. A missing field is an error. A `find` that matches nothing is an error too, so a routine never calls a tool with a missing value.
+
+An inline profile with a `routines` list replaces the routines of the named profile, as a tool list does. An empty list leaves the run without routines, and the JSON of a profile keeps an empty list, as it keeps the skills. The resolved profile holds the routines, so a run keeps the routines that it was queued with (section 12.5).
+
+When the kernel loads a profile, it checks the routines. It also checks the routines of each inline profile. It refuses these:
+
+- more than 64 routines in a profile
+- more than 16 steps, more than 16 checks, more than 16 questions, or a template over 4 KiB
+- a routine with questions and no decider, or a decider that `deciders` does not have
+- a template that does not parse, or a regular expression that does not compile
+- a name that is not valid, or a name that an earlier routine has
+- any routine on a process that hosts its runs (section 19), because no turn loop runs there
+
+Each error names the key, such as `agents.triage.routines[0] (ack).steps[1].input`, in words for an operator: "no model answers questions under the name clef". `fw.CheckRoutineName` checks a name with the same rule, for the workbench.
+
+### 22.2 Deciders
+
+The block `deciders` names the servers that routines and the tool `decide` ask:
+
+```yaml
+deciders:
+  clef:
+    driver: systemone                # optional, the client of the decider, systemone by default
+    baseUrl: http://127.0.0.1:5100   # POST {baseUrl}/v1/systemone
+    apiKeyEnv: CLEF_API_KEY          # the secret of the bearer token; empty sends no token
+    model: clef                      # required; the response names the model served
+    timeout: 30s                     # one call; 0 is 30s
+```
+
+Every field has a variable: `FW_DECIDERS_<NAME>_DRIVER`, `FW_DECIDERS_<NAME>_BASE_URL`, `FW_DECIDERS_<NAME>_API_KEY_ENV`, `FW_DECIDERS_<NAME>_MODEL`, and `FW_DECIDERS_<NAME>_TIMEOUT` (section 12.1). A variable creates the entry when the file lacks it.
+
+Package `fw` holds the interface `fw.Decider`, the configuration, the tool `decide`, and a registry of the clients. A driver package registers its client in `init` with `fw.RegisterDecider(name, ctor)`, as a model provider does, and `driver` names it. Package `decider/systemone` is the one driver of the kernel, and every build links it, the lean build too, because it needs only `net/http`. A worker image therefore serves a configuration with `deciders` without a rebuild. A `driver` that the binary does not link stops the load with the drivers that it links. `fw.WithDecider` gives an agent a decider of its own, such as a fake one in a test.
+
+No decider exists by default, and a decider has no default model. The System One client posts `{model, state, questions}`, with at most 64 questions in one call. The runner splits more questions of one decider into several calls. It reads the answers of Clef and Workers AI: `choice`, `noul`, and a `score` with a legend. It also reads the answers of TypeSafe: `answer`, `probability`, and a score by level. Any other shape is an error that names the field. The token comes from `Secrets` at each call and goes only in the `Authorization` header. The redactor knows the token, so no event and no log line holds it. A tool process never gets the variable of `apiKeyEnv` (section 7.12).
+
+### 22.3 The runner
+
+The runner acts once per run, after `fw.run.started` and before the first model turn. It acts on the routines with the standing `shadow` or `live`. It never acts on a replay, a branch, or a check run (section 23). After a restart, it never runs a routine again.
+
+1. The runner asks each decider once for the routines that share it. It calls the tool `decide` of the kernel, `fw.DecideTool`, through the tool path of the model, whatever `tools.builtin` holds. The call and the probabilities are therefore in `fw.tool.requested` and `fw.tool.responded`. The question ids are `<routine>.<question>`, and the state is the input of the run.
+2. It records one `fw.routine.decided` per routine, in the order of the profile. A shadow routine has the mode `shadow`. If the canary share picks the run, a live routine has the mode `canary`. Otherwise it has the mode `live`. The pick is a stable hash of the run id. If every question passes its band and its expected answers, the routine applies. When a decider fails, each of its routines does not apply, with the reason.
+3. The first routine in the mode `live` that applies runs its steps and then its checks. Each call goes through the path of a call of the model: the budget of the run and of its tree, the policy with its approval flow, and the limits of the tool. Each call records its events with `routine` set. An error result, a policy deny, the deny of a person, a template error, or a failed check ends the routine. The runner records `fw.routine.applied`.
+4. When the routine completes, the run finishes with the rendered answer and makes no model call. Otherwise the model runs. When the run has a decision in the mode `live`, the first user message starts with one block of data, as below. A run in the mode `shadow` or `canary` gets no block, because the model must not see the answers of the routine.
+5. At the end of a run that the model completed, the runner compares. It takes each routine in the mode `shadow` or `canary`, and each live routine that did not complete. For each question with `observe`, it records one `fw.routine.compared` before `fw.run.finished`. A finished run therefore stays finished. A run that fails is not compared.
+
+A restart can cut a live routine off. At the next start, the runner records `fw.routine.applied` with the reason "the process stopped during the routine", and the model starts with the block. The kernel resumes a run that waits for an approval of a call of its routine. It denies the approval as `kernel` first, so a later answer of a person gets `ErrNoPendingApproval`. After a routine that completes, the next step of the turn loop finishes the run. A restart between the two events takes the same step. A replay keeps the mark `replayOf` in its metadata, so it runs no routine after a restart either. A branch never compares the decisions that it kept from its source.
+
+The block names the source `routine`, so the sentence `fw.ContextNote` of the system prompt covers it (section 7.8.2):
+
+```
+<context source="routine">
+A routine of this agent looked at this run before you and did not complete it, so the run is yours. What it decided and did:
+- Routine ack, version 2: applies. Answers: beyond: the probability of yes is 0.01; type: bug with probability 0.93.
+Calls of routine ack:
+1. gitea.label_read, ok: [{"id":11,"name":"type/bug"},...]
+2. gitea.issue_write, ok: ok
+3. gitea.issue_write, error: gitea: 503 Service Unavailable
+It stopped: step 3 gitea.issue_write: error: gitea: 503 Service Unavailable.
+</context>
+```
+
+### 22.4 Replay and propose
+
+Package `routine` reads recorded runs. `routine.Replay` checks a routine against them. For each run, it reads the answers of the agent with `observe`. A run whose answer a question does not expect, or whose `find` finds no value, is one that the routine hands to the agent: Replay counts it as handed. For every other run, Replay renders each step and compares it with the call of the agent to the same tool at the same place. It compares each key of `compare`, or else each key of the rendered input, as canonical JSON. A key that only the agent sets is extra and is counted. A check matches the next call of its tool and the recorded result. A check that the agent never made is unchecked and is counted. With a decider, Replay also scores the decider per question: the agreement, the Brier score, and a table of reliability at the bands 0.5, 0.7, 0.85, and 0.95.
+
+`routine.Propose` makes a routine from the runs that completed and that nobody sent back. The most common sequence of tool names gives the steps, and a list takes the length that most runs give it. The runs with another sequence or another length are not used, with the reason. Each value of an input, and of a JSON answer, gets one kind:
+
+- A value that every run shares is a constant.
+- A key that some runs leave out and the others set to one value is an optional key, which the routine leaves out.
+- A list goes element by element.
+- A value from the input or from an earlier result is a `find`. Its context is the word that labels the value, such as `Number: (\d+)`, else the shortest context that reads every run.
+- A value from a small set, at most 8 values over at least 10 runs, is a question with the option `other`. The values of the answer become questions first.
+- A value whose context in a result holds the value of a question is a `find` with `printf`.
+- Any other value is free, `{{/* free <place> */}}`. The routine stays incomplete until a person writes it, and a replay of the step says "the routine cannot fill the value <place> yet".
+
+The proposal also lists each problem that the kernel refuses in the routine. The verbs `fw routine replay` and `fw routine propose` run both over a ledger (section 12.9). Without `--ledger`, they read the ledger of the configuration.
+
+A proposal reads many runs. That is the work of the workbench or of a librarian over a ledger, not of a worker. A build with the tag `lean`, such as a worker image, therefore leaves out `routine.Propose` and `fw routine propose`, and the verb then says so. The tag `propose` brings them back. `fw` without the tag and `fw-workbench` carry them. A replay stays in every build, because it needs the rendering of the kernel.
+
+### 22.5 Turn routines on
+
+A process without deciders and without routines spends nothing on them. No run asks a decider, the tool `decide` is off, and the runner returns at once. The rendered Task of a profile without routines does not change. These steps turn routines on for one profile:
+
+1. Name a decider in `deciders`, or with the variables `FW_DECIDERS_<NAME>_*`, and add `decide` to `tools.builtin`. A routine with questions needs both. A routine without questions needs neither.
+2. Give the profile its routines under `agents.<name>.routines`, in `fw.yaml` or in a profile file, with the standing `shadow` first. The workbench gives the profiles of a pool the routines of its store instead (the workbench architecture, section 21.3).
+3. Read the decisions and the comparisons in the ledger, or run `fw routine replay --decide` over the past runs.
+4. Set the standing to `live` once the routine agrees with the agent. `canary` keeps a share of the runs with the agent.
+
+To turn a routine off, take it out of the list, or send an inline profile with `routines: []`. Without a decider, the load refuses a routine with questions, so a half setup never runs.
+
+## 23. Check runs
+
+A check run makes tool calls and calls no model. The front of a fleet starts one for the check of a duty, and it wakes the model of the duty only for work. A quiet queue therefore costs no tokens.
+
+### 23.1 The request
+
+A run request takes `check`. The body of `POST /v1/runs`, a message of the bus intake, and `RunRequest.Check` of the Go API take the same shape:
+
+```json
+{"agent": "triage", "input": "", "check": {"steps": [{"tool": "servicenow.query_incidents", "input": {"query": "priority<=2"}}], "timeout": "30s", "maxBytes": 1048576}}
+```
+
+| Field | Rule |
+|---|---|
+| `steps` | 1 to 5 tool calls, in order. Each step has `tool`, the name of a tool of the agent, and `input`, a JSON object. An empty input is `{}`. |
+| `timeout` | The time limit of the whole check, as a duration string such as `"30s"`, or a number of nanoseconds. The default is 30 seconds. The limit is 60 seconds. |
+| `maxBytes` | The most bytes that the output keeps of the result of each step. The default is 1 MiB. The limit is 4 MiB. |
+
+The input of a check run can be empty. The kernel refuses a check outside these bounds with a 400 that names the field. A Go caller, such as the front of a fleet, gets the same answer from `fw.Check.Resolved` before it saves a duty.
+
+The kernel sets the metadata `fw.kind` to `check` on a check run (`fw.MetaKind`, `fw.RunKindCheck`, `fw.Run.Kind`). Only the kernel sets this key. A request or an annotation with this key gets a 400.
+
+### 23.2 The calls
+
+After `fw.run.started`, the turn loop makes the calls of the steps in order. Each call takes the path of a call of the routine runner (section 22.3). The budget of the run and of its tree, the policy of the agent, and the limits of the tool apply. The ledger records `fw.tool.requested` and `fw.tool.responded` for each call, as for a call of the model. The call ids start with `check_`.
+
+- If the policy asks before the tool of a step, the run fails at once, because nobody answers a check. The error names the step, the tool, and the rule, such as `check step 1 (rm): the policy asks before this tool (rule: ask destructive), and a check runs only tools that the policy allows without a question`.
+- If the policy denies the tool of a step, the run fails with the reason of the policy.
+- If the agent has no tool with the name of a step, the run fails. A tool that the tool list of the profile leaves out counts as such a tool.
+- After a step that fails the run, no step runs.
+- An error result of a tool does not fail the run. The result of the step then has `"isError": true`, and the next step runs.
+- A tool of a check gets no asker and no connecter. A question of the tool therefore gets `fw.ErrNoAsker`, and the run never waits for a person.
+- At the time limit, the call in flight ends. The ledger records its error result, and the run fails. A step with no time left does not start.
+- Each call counts against `budget.maxToolCalls` of the run, as any call does.
+
+The `fw.run.started` of a check run names no model, and no tool writes a brief or a context for it. A process without a model therefore takes a check run. On a process whose runs a `Runner` drives (section 19.2), the turn loop runs the check runs. The runner of routines does not act on a check run.
+
+### 23.3 The output
+
+The output of a completed check run is JSON with one result per step, in the order of the steps (`fw.CheckOutput`):
+
+```json
+{"results": [{"tool": "servicenow.query_incidents", "output": {"result": {"records": [{"number": "INC0012"}]}}, "isError": false}]}
+```
+
+`output` holds the text of the result of the tool. If the text parses as JSON, `output` is that JSON. Otherwise, `output` is a JSON string.
+
+If the text is longer than `maxBytes`, the step keeps the first `maxBytes` bytes of the text, on a rune boundary. Its `output` is then a JSON string, and the result has `"cut": true`. The ledger records the cut result. A result with an image or a document keeps only its text, and it also has `"cut": true`. The output limit of the tools (`tools.limits.maxOutputBytes`, section 7.7) does not cut the result of a step, because no model reads it.
+
+A failed check run has the reason in `error`. Its output holds the results of the steps before the failure. A check run that failed at its first step has no output.
+
+The usage of a check run has no tokens and no cost. It counts the tool calls.
+
+### 23.4 Limits of a check run
+
+- A check run takes no follow-up message and no branch (section 4.7), because a message starts the model. `Agent.Send` and `Agent.Fork` refuse with `ErrInvalidRequest`, and the routes answer 400.
+- A check run has no outcome (section 20), because no model writes an answer to grade.
+- After a restart, a check run that made no call yet runs its check. A check run that a restart or a shutdown cut off after its first call fails with the error "the process stopped during the check". The kernel never runs a check twice, because it cannot know that the tools of the check only read.
+
+### 23.5 The lists and the intake
+
+`GET /v1/runs` leaves out the check runs. The query `kind=check` lists the check runs alone. The A2A method `tasks/list` and the search of recall over runs (section 7.8.3) also leave out the check runs. `GET /v1/runs/{id}` reads a check run as any run. A linked package, such as the front of a fleet, filters its own lists with `view.FilterKind`. The status of the process and the metrics count the check runs, so a Task with a check in progress is not idle.
+
+A check run comes over the bus intake as any run request (section 9.3). The retry of a failed check run keeps the check, so the retry is a check run too. The dead-letter record also holds the check.
