@@ -21,7 +21,7 @@ The workbench changes no kernel code. It plugs in through the extension points o
 - The package `sources` uses `fw.RegisterService`, `native.Extend`, and `cli.RegisterDoctorCheck` too: its service runs the sources, its route takes the events of webhooks, and its doctor line names the sources (section 13).
 - The packages `pages`, `faces`, `bridges`, and `routines` use `fw.RegisterService` and `native.Extend`, and `mcp.RegisterTools` of the MCP server of the workbench (section 3.1): the service keeps the store, the routes serve it to people, and the tools offer it to MCP clients and agents (sections 15, 16, 18, and 21). The service of `bridges` also watches the view of the fleet and fans the messages of a channel out to the runs of its members. The package `routines` gives the fleet the routines of the agents (`fleet.Routines`) and reads the events of the routines from the egress stream that the fleet reads (`fleet.Tap`).
 - The package `bossmode` uses `fw.RegisterService`, `native.Extend`, `metrics.RegisterCollector`, and `cli.RegisterDoctorCheck`: its service keeps the stream of the page, its routes serve the page, its settings, and the stream, and its doctor line names the page, the manager, the quick chat, the streams, and the stores of the wiki, the faces, and the bridges (section 17).
-- The package `workers` uses `native.Extend` and `mcp.RegisterTools` for the routes and the tools of the worker templates and the runtime pools (section 14.10). The package `skills` registers nothing: the package `bossmode` serves the routes and the tools of the skills, and the package `bridges` takes a slash command in a channel (section 20).
+- The package `workers` uses `native.Extend` and `mcp.RegisterTools` for the routes and the tools of the worker templates and the runtime pools (section 14.10). It does the same for the packages of a pool (section 14.11). The package `skills` registers nothing: the package `bossmode` serves the routes and the tools of the skills, and the package `bridges` takes a slash command in a channel (section 20).
 - The package `manager` holds what makes an agent of the fleet a manager (section 19). `cmd/fw-workbench` wraps the authorization plug of every agent with `manager.Guard` through `fw.WithAuthzFrom`. It also adds the line `manager` to `fw doctor` with `cli.RegisterDoctorCheck`. Each tool of the MCP server that reads or acts calls `manager.OnBehalf` at its start.
 - The packages of bossmode meet at five seams in the workbench, and none of them is a hook of the kernel:
   - The service of `bridges` gives its store to `manager.SetBridges` when it starts and takes it back with `manager.ClearBridges` when it stops. So a manager run on a run of a bridge gets what the record of that bridge delegates (section 19.4).
@@ -82,7 +82,7 @@ surface/mcp/            the MCP server over HTTP and over stdio (section 3)
 fleet/                  the fleet: the member record, the view, forwarding, the queues,
                         the wake, and the fleet metrics (section 4)
 pools/                  the pools: the configuration, the rendered Tasks, and the reconciler (section 14)
-workers/                the routes and the MCP tools of the worker templates and the runtime pools (section 14.10)
+workers/                the routes and the MCP tools of the worker templates, the runtime pools, and the packages (sections 14.10 and 14.11)
 sources/                the event sources: webhooks and polls that turn the events of
                         outside systems into runs (section 13)
 pages/                  the wiki of the fleet: pages of Markdown with a history (section 15)
@@ -135,7 +135,7 @@ The package `surface/web` mounts the routes for people on the native surface of 
 |---|---|---|
 | `/mcp` | MCP server over Streamable HTTP, POST only | default on |
 | `/ui` | Dashboard page (section 6.2) | always |
-| `/ui/signin`, `/ui/callback` | Browser sign-in (section 5) | with `auth.oidc.clientId` |
+| `/ui/signin`, `/ui/callback`, `/ui/refresh` | Browser sign-in and its renewal (section 5) | with `auth.oidc.clientId` |
 | `/ui/connect/callback` | The end of a connection (section 2.1) | always |
 | `/.well-known/oauth-protected-resource` | Protected resource metadata (RFC 9728) | when `auth.mode` includes `oidc` |
 | `/v1/sources/{name}` | Webhook sources, POST only, with the credential of each source (section 13) | with a webhook source in `workbench.sources` |
@@ -153,6 +153,7 @@ The package `surface/web` mounts the routes for people on the native surface of 
 | `POST /v1/pools`, `PATCH /v1/pools/{name}`, `DELETE /v1/pools/{name}` | Create, change, or delete a runtime pool (section 14.10). |
 | `GET /v1/templates` | The worker templates, with `default`, and no image, variable, or egress rule (section 14.10). |
 | `GET /v1/fleet/orphans`, `DELETE /v1/fleet/orphans` | The child Tasks whose parent Task is gone, and their removal, for an admin (section 14.10). |
+| `GET /v1/pools/{name}/packages`, `PUT /v1/pools/{name}/packages` | The packages of the workers of a pool, with the state of each worker, and their change (section 14.11). On a front with a package mirror. |
 | `GET /v1/home` | The home of the caller: the runs that need the caller, the runs in progress, and the recent results (section 6.3). |
 | `GET /v1/home/others` | The top-level runs of the people outside the teams of the caller, newest first, at most 200, as `{"runs": [...]}` (section 8). |
 | `GET /v1/runs/{id}/result` | What the run produced and what it needs next (section 6.3). The read authorizes the caller as `GET /v1/runs/{id}` does. |
@@ -364,7 +365,7 @@ When the MCP server acts for the person of a run of a worker (section 19), the p
 
 ### 4.5 Acting on a run of another member
 
-Run ids are unique across the fleet. A request can name a run that the process does not have but the view knows. Then the process forwards the request to the Task that owns it. This applies to the native routes under `/v1/runs/{id}` that the kernel serves. It also applies to the MCP tools `run_status`, `run_events`, `run_file`, `approve`, `cancel`, `send`, `fork`, and `run_budget`, which goes to `PATCH /v1/runs/{id}/budget` of the owner. The views of a run that only the front serves are not forwarded: `GET /v1/runs/{id}/result`, `GET /v1/runs/{id}/transcript`, and the MCP tool `run_result`. A worker serves the native API of the kernel alone, so the front reads the run and the events of the owner through the same forward, and builds the view here (`fleet.MemberEvents`, `fleet.MemberLedger`, `dashboard.ResultFrom`). `POST /v1/builder` and the MCP tool `agent_builder` with a `fromRun` of another member read the run and its events from the owner in the same way, apply the terms of Save as agent, and start the builder here (`dashboard.SaveAsAgentInputOn`). `POST /v1/runs?member=<name>` and the `member` argument of the MCP tool `run` start a run on another member. Through MCP, such a run does not wait, and the client follows it with `run_status`.
+Run ids are unique across the fleet. A request can name a run that the process does not have but the view knows. Then the process forwards the request to the Task that owns it. This applies to the native routes under `/v1/runs/{id}` that the kernel serves. It also applies to the MCP tools `run_status`, `run_events`, `run_file`, `approve`, `cancel`, `send`, `fork`, and `run_budget`, which goes to `PATCH /v1/runs/{id}/budget` of the owner. The views of a run that only the front serves are not forwarded: `GET /v1/runs/{id}/result`, `GET /v1/runs/{id}/transcript`, and the MCP tool `run_result`. A worker serves the native API of the kernel alone, so the front reads the run and the events of the owner through the same forward, and builds the view here (`fleet.MemberEvents`, `fleet.MemberLedger`, `dashboard.ResultFrom`). `POST /v1/builder` and the MCP tool `agent_builder` with a `fromRun` of another member read the run and its events from the owner in the same way, apply the terms of Save as agent, and start the builder here (`dashboard.SaveAsAgentInputOn`). `POST /v1/runs?member=<name>` and the `member` argument of the MCP tool `run` start a run on another member. Through MCP, such a run does not wait, and the client follows it with `run_status`. A pool can replace the worker of a run. Then no member holds the run, and it comes from the archive, read-only, with `"archived": true` (section 4.18).
 
 A request through the router wakes a Task that sleeps, whatever the request asks (section 4.12). Without a rule, a read of a run wakes its worker only to answer what the view already holds. The worker then flaps between sleep and wake while a person reads its conversation. So the relay splits the run routes of the kernel into two lists. `fleet.ViewRoutes` holds `GET /v1/runs/{id}`. The view answers it while the member of the run is quiet or stopped (section 4.3), and no request reaches the Task. A live member answers it itself, as before. `fleet.WorkerRoutes` holds the routes whose answer lives on the worker: `GET /v1/runs/{id}/events`, `GET /v1/runs/{id}/live`, `GET /v1/runs/{id}/files`, `GET /v1/runs/{id}/files/{path}`, and the writes `POST /v1/runs/{id}/messages`, `POST /v1/runs/{id}/reactions`, `PATCH /v1/runs/{id}/budget`, `POST /v1/runs/{id}/approvals/{approval}`, `POST /v1/runs/{id}/cancel`, and `POST /v1/runs/{id}/fork`. These routes always go to the member. A run route that neither list names goes to the member too, because only the member knows it.
 
@@ -432,6 +433,7 @@ The fleet reads the block `fleet` under the key `workbench` of `fw.yaml`, which 
 | `workbench.fleet.wakeOnQueue` | `FW_WORKBENCH_FLEET_WAKE_ON_QUEUE` | Whether the front wakes the sleeping Tasks of a profile when jobs wait in its intake queue, `on` or `off` (section 4.13). It needs `atespaces` and `intake`. | on with atespaces and intake, else off |
 | `workbench.pools` | none | The pools of Tasks that the front keeps, each with its image, the configuration of its workers, and its replica count (section 14) | none |
 | `workbench.templates` | none | The worker templates: what a worker is, without its agent. A pool of the file can name one, and a person creates a runtime pool from one while the front runs (section 14.10). | none |
+| `workbench.packages` | none | The package mirror of the deployment: `mirrors.python`, `mirrors.tools`, and `egress`. Without it, the packages of the pools are off (section 14.11). | none |
 
 A worker needs no key of this block: it sets `bus.driver`, `bus.url`, `bus.egress`, `bus.intake`, and `tokens.url` of the kernel. On a NATS bus, the front and the workers must name the same JetStream stream in `bus.options.stream`, `FW` by default, because the front reads the queues from it (section 4.13). The front names its sources:
 
@@ -661,18 +663,53 @@ Another package reads events of the egress stream through the view, without a su
 
 The view also marks two facts of each run of a Task for the summary of the routines (section 21.6): a routine completed the run (`fleet.AppliedOK`), and a quality observation of the run says `rejected` (`fleet.Verification`). `Fleet.Outcome(id)` returns both, and whether the view saw the start of the run on the stream, so it saw every such event after it. `fleet.RunsSince` and `fleet.FactsOf` read the runs of an agent in a window and these facts, from the view and from the ledgers of this process, for the day of an agent (section 17.8) and the summary of the routines.
 
+### 4.18 The archive of the runs
+
+A run lives in the ledger of its Task. A new Task starts with an empty `/workspace`, because the disk belongs to the Task and not to its Workspace. So a pool that replaces a Task erases the runs of that Task, and the view and the index forget them (section 4.16). On 2026-10-25, three deploys replaced every worker this way, the manager included. The egress stream of the workers still holds their events, so the front keeps an archive of the runs from that stream.
+
+The source. On a NATS bus, the front reads the stream of the bus from its start with the durable consumer `fw-workbench-archive`. The stream is `bus.options.stream`, `FW` by default. Its filter is `<workbench.fleet.egress>.>`, and it takes every event that the stream holds, also the events from before the first start of the front. So the first start of a front with the archive brings back the runs that the deploys erased. Every replica of the front shares the consumer. The consumer hands out one event at a time (`MaxAckPending` 1). So the replicas write the archive one event after another, in the order of the stream. The front acknowledges an event after it wrote it. When the archive fails to write an event, the event comes again after five seconds. An event that the consumer handed out twice writes once. On the bus `mem`, the archive takes the events of the egress stream from the start of the process. Another bus keeps no archive.
+
+The bucket. The archive lives in the key-value bucket `<stream>_ARCHIVE`. With NATS accounts, allow the front `$KV.<stream>_ARCHIVE.>` and the API of the consumer `fw-workbench-archive` of the stream. The bucket holds two kinds of entries:
+
+| Key | Value |
+|---|---|
+| `run.<id>` | The summary of the run. It holds the projection of its events (`fw.Run.Apply`) with every field of a live run, its metadata included. It also holds the member that held the run, and the parent that a `fw.run.child` of another run names. The keys of the last events that it applied make a second delivery apply once. |
+| `events_<id>.<seq>.<event id>` | One event of the run as the stream carried it. The sequence number of the run sorts the keys. The id of the event makes a second write fail, so each event is in the archive once. |
+
+An event is one entry, so the archive never reads an entry to add an event. A value holds at most 1 MiB. An event that is larger keeps its place without its data. Each replica keeps the summaries in memory. Every ten seconds, it reads the summaries that changed in the background, so it learns the runs that the other replica wrote. A request never waits for the bucket.
+
+The routes. When neither this process nor a member of the view holds a run, the routes of runs answer from the archive. The caller needs the view of the run, decided as for a run of a member (section 4.4). A run of the archive carries `"archived": true`:
+
+| Route | Answer for a run of the archive |
+|---|---|
+| `GET /v1/fleet/runs` | The list holds the runs of the archive that no member holds, each with `"archived": true`, beside the runs of the view. The query parameters narrow them as they narrow the other runs. `scope=local` leaves them out. The list leaves out an internal run and a check run as before (`fleet.Listed`). The metadata `workbench.internal`, `fw.batch`, and `fw.view` filter as for a live run. |
+| `GET /v1/runs/{id}` | The run with `member` and `"archived": true`. A person gets `can` with `operate` false. |
+| `GET /v1/runs/{id}/events` | The events of the archive, as the kernel answers them: `{"run", "events", "lines"}` for JSON, with `from` and `limit`, and else the events as server-sent events, after which the stream ends |
+| `GET /v1/runs/{id}/transcript` | The pages of the transcript, with `"archived": true` on `run` |
+| `GET /v1/runs/{id}/result` | The result, with `"archived": true` |
+| `POST /v1/runs/{id}/messages` and every other write | 409 with the detail "The worker of this conversation was replaced, so the conversation is read-only. Start a new one." |
+| `GET /v1/runs/{id}/live`, `GET /v1/runs/{id}/files` | 404: the worker and its files are gone |
+
+The stream carries no `fw.model.responded` (section 4.1). So the transcript and the result of a run of the archive show each tool call from its `fw.tool.requested`. They show the answer of the agent from the output of each `fw.run.finished`. An answer of the model between two tool calls is not in the stream. The egress cut each long string to 4,096 bytes, and the archive keeps the cut text.
+
+Limits:
+
+- The archive keeps every event of the stream and removes none. The stream keeps its events by the limits of its server.
+- On the bus `mem`, the archive holds only the events since the start of the process.
+- A run that a worker started while its egress did not reach the bus is not in the stream, and so not in the archive.
+
 ## 5. Browser sign-in
 
 A person signs in to the dashboard at `/ui` through the OpenID Connect issuer of `auth.oidc`. Three keys turn the sign-in on and shape it:
 
 | Key | Variable | Meaning |
 |---|---|---|
-| `auth.oidc.clientId` | `FW_AUTH_OIDC_CLIENT_ID` | The client id at the issuer. A value turns browser sign-in on and adds the routes `GET /ui/signin` and `GET /ui/callback`. |
+| `auth.oidc.clientId` | `FW_AUTH_OIDC_CLIENT_ID` | The client id at the issuer. A value turns browser sign-in on and adds the routes `GET /ui/signin`, `GET /ui/callback`, `POST /ui/refresh`, and `DELETE /ui/refresh`. |
 | `auth.oidc.clientSecret` | `FW_AUTH_OIDC_CLIENT_SECRET` | The `Secrets` name of the client secret, such as `FW_OIDC_CLIENT_SECRET`. Empty means a public client. |
 | `auth.oidc.redirectUrl` | `FW_AUTH_OIDC_REDIRECT_URL` | The callback address that the issuer knows |
 | `workbench.signin` | `FW_WORKBENCH_SIGNIN` | `on` or `off`. The default is `on`. With `off`, the client id serves the connections of people alone (the kernel architecture, section 7.11): the two routes do not exist, a 401 names no sign-in, and the page shows its token form. A deployment whose issuer has no login page for a browser sets it off. |
 
-The sign-in also reads `auth.oidc.issuer`, `auth.oidc.scopes`, `auth.oidc.ca`, and `auth.oidc.insecure`. The scope of the request is `openid` plus `auth.oidc.scopes`. Without `auth.oidc.redirectUrl`, the redirect URI is `/ui/callback` on the public address of the page, from `mcp.auth.audience` or `a2a.url`. Without those, it is `/ui/callback` on the address of the request, as a proxy forwards it in `X-Forwarded-Proto` and `X-Forwarded-Host`. Only the first value of each header counts. Register that address at the issuer. A connection (the kernel architecture, section 7.11) returns to `/ui/connect/callback` on the origin of `auth.oidc.redirectUrl`, else on the origin of the request. Register that address too.
+The sign-in also reads `auth.oidc.issuer`, `auth.oidc.scopes`, `auth.oidc.ca`, and `auth.oidc.insecure`. The scope of the request is `openid` plus `auth.oidc.scopes`. If the discovery document of the issuer lists `offline_access` in `scopes_supported`, the request also asks for `offline_access`. The issuer can then give a refresh token (section 5.1). Without `auth.oidc.redirectUrl`, the redirect URI is `/ui/callback` on the public address of the page, from `mcp.auth.audience` or `a2a.url`. Without those, it is `/ui/callback` on the address of the request, as a proxy forwards it in `X-Forwarded-Proto` and `X-Forwarded-Host`. Only the first value of each header counts. Register that address at the issuer. A connection (the kernel architecture, section 7.11) returns to `/ui/connect/callback` on the origin of `auth.oidc.redirectUrl`, else on the origin of the request. Register that address too.
 
 A configuration that cannot work stops the start. These are the cases:
 
@@ -694,7 +731,7 @@ The flow has these steps:
 
 Every answer of `/ui/callback` deletes the cookie. A failure answers a plain page that says in one sentence what failed. No token, code, verifier, or secret enters a log line or an error message. When browser sign-in is on, every 401 problem document of the native API has the member `"signin": "/ui/signin"`. The content security policy of `GET /ui` allows the move to `/ui/signin` and still blocks forms.
 
-The page keeps one token, the access token or else the ID token, in the `sessionStorage` of its tab. It sends that token as a bearer token to `/v1`. The callback hands the page no refresh token, and no cookie holds the token. Pasting a token stays as the path for a developer.
+The page keeps one token, the access token or else the ID token, in the `sessionStorage` of its tab. It sends that token as a bearer token to `/v1`. No cookie holds that token. Pasting a token stays as the path for a developer.
 
 The key that signs the cookie comes from the first source in this list:
 
@@ -706,6 +743,30 @@ The key that signs the cookie comes from the first source in this list:
 If the key comes from the key file and the agent likely has replicas, the log holds one warning at start. Replicas are likely with a fleet, with a ledger driver other than `mem` or `file`, or with a bus driver other than `mem`. Each replica then has its own home and so its own key file.
 
 The key is an HMAC-SHA256 of its source with a label for this purpose. It therefore never equals the MCP state key. Replicas behind one address without session affinity set `FW_MCP_STATE_KEY` to the same value. Otherwise a callback that reaches another replica fails. A confidential client works without it, because every replica has the client secret.
+
+### 5.1 Renewal
+
+Some issuers give tokens with a short life. For example, Cloudflare Access gives tokens that last 5 minutes by default. A refresh token keeps such a sign-in alive. A refresh token is a second token that gets a new token from the issuer without a new login. The issuer gives one only to a client with that permission. At Cloudflare Access, you turn on "Refresh tokens" in the advanced settings of the application.
+
+If the token answer of the callback holds a refresh token, the callback keeps it in the cookie `fw_refresh`. The page never sees the refresh token. The cookie has these properties:
+
+- It holds the refresh token, the subject of the sign-in, and the end of the refresh token. AES-GCM encrypts it, with a key that comes from the key of the sign-in cookie. Every replica that shares that key can open it.
+- It is HttpOnly, SameSite=Strict, and limited to the path `/ui/refresh`. Over https, it is also Secure.
+- The issuer can give the life of the refresh token in `refresh_expires_in` or `refresh_token_expires_in`. Then the cookie lasts as long as the refresh token. Otherwise it lasts as long as the browser session.
+- A sign-in without a refresh token deletes it, so that a browser never renews as the person of an older sign-in.
+
+`POST /ui/refresh` trades the refresh token for new tokens at the token endpoint, with the same client authentication as the callback. The route keeps the first token that the `Authn` of the agent accepts, as step 7 does. That token must name the subject of the cookie. The answer is `{"token": "...", "expiresAt": "..."}`. `expiresAt` is the `exp` claim of a JWT, or else `expires_in` for an access token. Without both, the answer has no `expiresAt`. If the issuer rotates the refresh token, the answer replaces the cookie. The route answers these failures:
+
+| Case | Status | Cookie |
+|---|---|---|
+| `Sec-Fetch-Site` names another site. Without that header, `Origin` names another origin. | 403 | stays |
+| The browser has no cookie, or the cookie does not open or ended | 401 with `signin` | deleted |
+| The issuer refuses the refresh token, or the renewed token names another subject or fails the `Authn` | 401 with `signin` | deleted |
+| The issuer does not answer | 502 | stays |
+
+`DELETE /ui/refresh` deletes the cookie. The page calls it at Sign out. No refresh token enters a log line or an answer.
+
+The page renews its token one minute before the `exp` claim of the token. A token that lives less than two minutes renews at half of its life. A browser slows the timers of a hidden tab. At the return of its tab into view, the page therefore plans the renewal again. After a 401, the page renews once and repeats the request. Calls at the same time share one renewal. Only a 401 that stays after the renewal shows the sign-in. A new tab with no token in its `sessionStorage` also gets one this way, without a move to the issuer. The page at `/ui` renews after a 401 only.
 
 ## 6. Managing agents
 
@@ -1364,6 +1425,7 @@ Each entry of `workbench.pools` has these keys. A key that a pool does not know 
 | `egress` | `spec.egress` of each Task: `hosts`, each a DNS name with an optional scheme and port. A name alone is TLS on port 443 that the gateway forwards without decryption, `http://` is cleartext HTTP on port 80, `https://` is HTTPS on port 443 that the gateway intercepts, and a port after the name replaces the default. ax creates the egress policy of the actor from it before the Task first runs. | required |
 | `resources` | `requests` and `limits` of each Task, each with `cpu` and `memory`. | none |
 | `files` | Extra files of the Workspace, each with a `path` relative to `/workspace` and its `content`. | none |
+| `packages` | The packages of the workers: `on`, `ask`, `python`, and `tools` (section 14.11). It needs `workbench.packages`. | off |
 | `fw` | The `fw.yaml` of each worker: the agents and their profiles, the policy, the model, the providers, and the tools. | required |
 
 The intake. A pool takes the jobs of its agent from a queue of its own, and the front puts each job for the agent there (section 4.9). A pool named after its agent takes `<workbench.fleet.intake>.<agent>`, as the pool `manager` of the agent `manager` and a runtime pool of `agent_put` do (section 14.10). The name of the agent then becomes the name of the pool in lowercase, with a hyphen for each character that a pool name does not take (`pools.NameAfter`). Any other pool takes `<workbench.fleet.intake>.<name>`, so the pool `crew-reviewer` of the agent `reviewer` takes `fw.jobs.crew-reviewer`. A Task outside any pool that runs a profile `reviewer` reads `fw.jobs.reviewer`, so it takes no job of that pool. Such a Task still shares the queue of a pool named after its agent, and the doctor names it (section 4.13). An `intake` that the pool sets wins. Two pools on one intake take the jobs of each other, so the check refuses them, unless both pools set that intake and so share the queue on purpose.
@@ -1602,7 +1664,7 @@ The templates. The block `workbench.templates` lists the templates. A key that a
 | `atespace` | The atespace of the Tasks, as for a pool | the only atespace of the fleet |
 | `image` | The worker image by digest | required |
 | `generation` | A number of 0 or more that orders the configurations of the template. A pool from the template adds it to its own generation, so a deploy that raises it orders every pool of the template (section 14.5). | `0` |
-| `env`, `egress`, `resources`, `files` | As for a pool (section 14.1) | as for a pool |
+| `env`, `egress`, `resources`, `files`, `packages` | As for a pool (section 14.1) | as for a pool |
 | `fw` | The base configuration of the workers: the model, the providers, the bus, the policy, and the tools. It names no `agents`. | none |
 
 The front checks each template at its start as a pool of one worker, as far as the checks of a pool apply without an agent (section 14.1). The check gives the template a profile with an access block that names an owner, because `agent_put` gives a new profile its creator as its owner (section 10). A problem stops the start, and the error names the key, for example `workbench.templates[0] (python): image "ghcr.io/example/fw:latest" has no digest`. Three rules differ from a pool:
@@ -1671,6 +1733,149 @@ Creation in one step. The page creates an agent with its workers in one call: `P
 Who can. A create needs `agent.create` on the process, which the creators of `access` have (the kernel architecture, section 13.2). A change and a delete need the owner role on the agent of the pool, decided as for a profile of a pool (section 14.9): with the access configuration of the front and the access block of the profile in the overlay of the pool. Until the overlay holds that profile, the person who created the pool owns it. The admins of the front can do everything. For a run of the fleet with a person, the roles of the person decide, and the token must allow the action too (section 19).
 
 The doctor. The fleet line of `fw-workbench doctor` names the templates, with the default, and counts the runtime pools of the store and those that are being deleted. It reads the store with the timeout of the doctor. A runtime pool that names a template that the configuration does not hold fails the line, and so does a store that does not answer. A runtime pool whose intake is the intake that a pool of the file sets fails the line too, because the workers of both pools would take the jobs of each other, and the line names the pool of the file to give another intake. On the bus `mem`, the store lives in the memory of the front, which the doctor does not reach, and the line says so.
+
+### 14.11 Packages
+
+A pool can give its workers extra software: Python packages, and Programs such as `nodejs` or `iproute2`. The kernel of each worker installs them on the durable volume of its Task, so a suspend keeps them (the kernel architecture, section 18). The front holds the lists of a pool, so a package that one worker gets reaches every worker of the pool.
+
+The mirror. The block `workbench.packages` names the package mirror of the deployment. Without it, the feature is off for the whole front. The routes below then answer 404, the tools below are not there, and `GET /v1/bossmode` says `"packages": false` (section 17.4).
+
+```yaml
+workbench:
+  packages:
+    mirrors:
+      python: http://pkg-cache.fw-fleet.svc.cluster.local:8080/pypi/simple
+      tools: http://pkg-cache.fw-fleet.svc.cluster.local:8080/conda-forge
+    egress: [http://pkg-cache.fw-fleet.svc.cluster.local:8080]
+```
+
+| Key | Meaning |
+|---|---|
+| `mirrors.python` | The index of the Python packages. The workers use it in place of the public index. Required. |
+| `mirrors.tools` | The mirror of the channel conda-forge. The workers use it for the Programs. Required. |
+| `egress` | The egress hosts that reach the mirror, in the form of `egress.hosts` of a pool (section 14.1). The front adds them to the egress of each Task of a pool with packages. |
+
+Each mirror must be an http or https URL with a host, and without a user, a password, a query, or a fragment. Every tool process of a worker can read the URL, so a mirror must not need a credential. A problem stops the start, and the error names the key. The checks come from the package `env/pkglist` of the kernel, which has no init function. The workbench does not link the package `env` of the kernel, because its init gives a process the tool `env` and the install service.
+
+The setting of a pool. An entry of `workbench.pools`, a template of `workbench.templates`, and the overlay of a pool can hold the key `packages`:
+
+```yaml
+packages:
+  on: true
+  ask: true
+  python: [ansible-lint]
+  tools: [iproute2]
+```
+
+| Key | Meaning | Default |
+|---|---|---|
+| `on` | `true` gives the workers the packages. A pool or a template with `on` needs `workbench.packages`. | `false` |
+| `ask` | `true` lets the agent ask for a package with the tool `env`, and a person approves each add and each remove. With `false`, the tool only lists. | `false` |
+| `python` | The Python packages, each a requirement such as `ansible-lint` or `pyyaml>=6` | none |
+| `tools` | The Programs, each a package such as `nodejs>=22` or `iproute2` | none |
+
+A pool that sets no `packages` takes the key of its template, and so does a runtime pool. The overlay wins over both. The front checks each name as the kernel does. It trims the name, and a name that a list holds twice counts once. It refuses an empty name, a name that starts with a dash, and a name with a control character. A name holds at most 200 characters, and a list at most 100 names.
+
+The render. On a front with a mirror, every pool and every template gets the infrastructure of the packages, whatever its setting. The render of a pool does these things:
+
+- It adds the block `environment` to the fw.yaml of the workers. The block holds `on` and `ask` of the setting, both lists under `packages`, and both URLs under `mirrors`. While the setting is off, both lists are empty. Each name is escaped as a profile is (section 14.9), so the worker never expands a variable into a name.
+- It adds the hosts of `workbench.packages.egress` to the egress of each Task.
+- When `fw` sets `tools.builtin`, it adds `env` to that list. Without the key, the kernel adds the tool itself.
+- When `fw` sets `policy.ask`, it adds `env: command=add` and `env: command=remove` to that list. Without the key, the kernel adds the two rules itself. The plan of the packages names the list `policy.rules.ask`, the name of the field in Go: the rules of the policy are inline in fw.yaml. So a pool never lets an agent add or remove a package without a person.
+- It adds `env` to the tool list of each profile of the pool. A profile without a tool list, and a list with `env` or `*`, stay as they are.
+
+Without `ask`, the kernel refuses an add and a remove itself, and the two rules still ask a person (the kernel architecture, section 18).
+
+Changes in place. The hash of a pool leaves out the setting: `on`, `ask`, and the lists of the block `environment`. So a change of the setting replaces no worker, and each worker keeps its Workspace and its runs. On the walk of 2026-10-25, a change replaced each idle worker. The new Task started with an empty `/workspace`, so the runs of the agent were gone. The front now sends the setting to the workers itself:
+
+- After a change, the front sends `PUT /v1/environment` with `{"on", "ask", "python", "tools"}` to each worker of the pool whose Task runs, with its static token. The kernel takes the body as the base of the environment and installs the difference in the background (the kernel architecture, section 18).
+- At each pass, the front also sends it to a running worker whose last event names another setting. That event is the last `fw.env.ready` or `fw.env.failed` since the creation of the Task. It names another `on`, another `ask`, or other lists. The front sends the same body to one worker at most once in two minutes.
+- The front wakes no worker for this, because a request through the router wakes a Task that sleeps. A sleeping worker gets the setting at the first pass after it wakes, because its next event names the old setting.
+- A new Task boots with the setting of its pool from its fw.yaml.
+
+The check of a name. Before the front saves a new Python package, it asks the index of the mirror at `<mirrors.python>/<normalized name>/`. When the index answers 404, the request answers 400 with the detail "There is no Python package named X.". X is the name as the person wrote it, without the version. A mirror that does not answer within three seconds, or that answers anything else, blocks nothing, and the front saves the name.
+
+The overlay. The overlay of a pool keeps one entry for the packages: the key `packages` in the bucket `<stream>_POOL_<pool>` (section 14.9). It holds `on`, `ask`, both lists, and who wrote the entry last and when. It also holds the ids of the last events `fw.env.changed` that the front wrote into it. Each item of a list holds `name`. An item that a person added also holds `by` and `at`, and an item of an approval also holds `agent` and `run`. A write reads the entry and writes at the revision that it read, so two replicas of the front never lose a change. A delete of a profile keeps the entry.
+
+The events. The kernel of each worker publishes the state of its environment on the subject `fw.environment` of the bus (the kernel architecture, section 18.6). `fw.env.ready` and `fw.env.failed` also name `on`, `ask`, and `lists`, the base of the worker with its local changes. The field `node` of an event is `ax:<atespace>/<task>`. The front subscribes to the subject. For a Task that a pool owns (section 14.3), it keeps the last event in the bucket `<stream>_ENVIRONMENTS`. The bucket holds one entry per Task, so a restart of the front keeps the states. An event that is older than the entry, and the same event again, change nothing. On the bus `mem`, and on a bus that keeps no store, the states live in the memory of the process. With NATS accounts, allow the front `$KV.<stream>_ENVIRONMENTS.>`. An event of a child Task of a worker changes nothing, because such a Task belongs to no pool.
+
+| Event | What the front does |
+|---|---|
+| `fw.env.ready` | The state of the Task is ready, with the digest and the versions of the installed packages. |
+| `fw.env.failed` | The state of the Task is failed. The answer names the step, the error, the end of the output of the manager, and the time of the next try. |
+| `fw.env.changed` | With the command `add` or `remove`, the front writes the change into the overlay of the pool. The event keeps the last ready or failed state of the Task, so its installed versions stay. The next `fw.env.ready` names the change. |
+
+An approved change. When a person allows an add or a remove of the tool `env` on one worker, the worker installs the change and publishes `fw.env.changed`. The front then writes the change into the overlay of the pool, so every worker of the pool gets it. The item names the person who allowed it in `by`, the agent, and the run. An add of a package whose name the list holds replaces that item, so `pyyaml>=7` takes the place of `pyyaml>=6`. A remove takes away each item of that name. The front writes a change only on these conditions:
+
+- The setting of the pool is on, with `ask`.
+- The view saw `fw.approval.requested` of the tool `env` for the run of the event, with the same command, list, and package. After it, the view saw `fw.approval.decided` with `allow` (section 4.1).
+- The name passes the checks above.
+
+Else the front logs a warning and writes nothing. The worker keeps its own change until the lists of the pool change, and then its kernel drops it. Each replica of the front gets each event. The entry records the id of the event. So the second replica and a repeated delivery write nothing, also after a person removed the package again.
+
+The routes and the tools. These routes sit behind the authentication of the native API, on a front with a mirror and pools:
+
+| Method and path | Purpose |
+|---|---|
+| `GET /v1/pools/{name}/packages` | The setting of the pool, the items, and the state of each worker |
+| `PUT /v1/pools/{name}/packages` | Replaces the setting and both lists. `?dryRun=true` checks the body and changes nothing. |
+
+Both answer 200 with this shape:
+
+```json
+{
+  "pool": "proxmox-admin",
+  "available": true,
+  "on": true,
+  "ask": true,
+  "python": [{"name": "ansible-lint", "by": "alice", "at": "2026-10-25T09:00:00Z", "agent": "proxmox-admin", "run": "01K..."}],
+  "tools": [{"name": "iproute2", "by": "alice", "at": "2026-10-25T09:00:00Z"}],
+  "applying": true,
+  "workers": [
+    {"task": "proxmox-admin-0", "state": "ready", "at": "...", "digest": "...",
+     "installed": {"python": [{"name": "ansible-lint", "version": "24.9.2"}], "tools": []}},
+    {"task": "proxmox-admin-1", "state": "failed", "at": "...", "digest": "...",
+     "failure": {"step": "python", "error": "...", "output": "...", "retryAt": "..."}}
+  ]
+}
+```
+
+- `available` says whether the front can change the setting. It is true on a front that keeps the overlays of its pools.
+- `on`, `ask`, `python`, and `tools` are the setting that the workers get. An item of the configuration has no `by` and no `at`.
+- `applying` is true while a Task of the pool runs an older configuration, or a worker is pending or materializing.
+- `workers` holds one entry for each Task of the pool, and none while the packages are off. `at` is the time of the last event of the Task. `installed` names the installed version of each package of the setting. `failure` holds the last failure.
+
+A state is one of these:
+
+| State | Meaning |
+|---|---|
+| `pending` | The last event of the Task names another `on`, `ask`, or lists, so the front sends it the setting. Or the Task runs an older configuration, or it does not run yet. |
+| `materializing` | The Task runs the current configuration and sent no event since its creation, because its kernel installs at its start. |
+| `ready` | The last event of the Task since its creation is `fw.env.ready`, and it names the setting. An event of an older kernel names no setting and counts as one that names it. |
+| `failed` | The last event of the Task since its creation is `fw.env.failed`, and it names the setting. |
+| `unknown` | The front holds no event of the Task. It also does not know the time at which ax created the Task. |
+
+An event from before the creation of a Task belongs to an earlier Task of the same name, so it counts as none.
+
+The body of `PUT` is `{"on", "ask", "python", "tools"}`, with the names as a person wrote them. `on` is required. An item that stays in a list keeps `by`, `at`, `agent`, and `run`. A new item names the caller and the time. With `on: false`, the lists stay in the overlay, so `on: true` restores them. A request that changes nothing writes nothing.
+
+Who can. A read needs the view of the pool (section 14.7). A change needs the owner role on the agent of the pool, as `PATCH /v1/pools/{name}` does (section 14.10). The admins of the front can do everything. A pool that the caller cannot view answers 404. A caller without the role gets 403, and a body that does not fit gets 400 with the problem. A runtime pool that a person deleted answers 409. On a front that keeps no overlays, a change answers 400.
+
+The MCP tools `packages_get` and `packages_put` call the Go functions of the routes, `fleet.PackagesOf` and `fleet.PutPackages`. `packages_get` takes `pool`. `packages_put` takes `pool`, the fields of the body, and `dryRun`. Their text says package, Python package, and Program, as the page does.
+
+Security:
+
+- A person approves each change of the packages by an agent. The render keeps the two rules in `policy.ask`. Without `ask`, the kernel refuses the change. An allow rule of the overlay never names a rule with a field (section 14.9).
+- For packages, a worker reaches only the mirror, a host inside the cluster. The mirror holds no credential.
+- A worker that sends `fw.env.changed` also needs an approval that the view saw. A worker that forges both events on the bus can still reach the overlay of its pool. The approval of a person and the narrow egress stay the main defenses.
+- The log and the overlay hold no token. The log names the pool, the Task, the command, the list, the package, the agent, the run, and the person.
+
+Known limits:
+
+- The view keeps the approvals of a run in memory. When the front restarts between an approval and `fw.env.changed`, it writes nothing, and the other workers do not get the package. The person then adds it on the page.
+- A change of a child Task of a worker stays with that Task.
+- `GET /v1/agents` comes from the kernel and lists the profiles of the front alone. The page finds the pool of an agent with `GET /v1/agents/{name}`, which names `pool` (section 14.9), or with `GET /v1/fleet`.
+- A deploy that adds `workbench.packages` changes the hash of every pool once, because the infrastructure joins the fw.yaml and the egress. The archive of the runs keeps the runs of the workers that such a roll replaces (section 4.18).
 
 ## 15. Pages
 
@@ -1912,7 +2117,8 @@ The fleet sends its changes through `Watch` (section 4.15), and the service of b
   "theme": {"accent": "#FF4D00", "name": "", "logo": ""},
   "templates": [{"name": "general", "default": true}, {"name": "python", "default": false}],
   "chat": {"agent": "chat", "member": "default/manager-0"},
-  "routines": true
+  "routines": true,
+  "packages": true
 }
 ```
 
@@ -1924,6 +2130,7 @@ The fleet sends its changes through `Watch` (section 4.15), and the service of b
 - `templates` names the worker templates of the front in the order of the configuration, each with `default`, so the page offers the choice when it creates an agent. It is `[]` without templates. The page creates the agent and its workers with `PUT /v1/agents/{name}` and `workers` (section 14.10).
 - `chat` is `null` when `workbench.bossmode.chat.agent` is empty. `chat.agent` is the profile of the quick chat (section 17.7). `chat.member` is `workbench.bossmode.chat.member` as the configuration names it. Without it, the settings pick the member as for `manager.member`, with the profile of the quick chat in the place of the manager, and the answer names only a member that the caller can see, else `""`.
 - `routines` is true when this process keeps routines and serves their routes (section 21). It is false when `workbench.routines.enabled` turns them off or the bus keeps no store, and the page then shows no place Routines.
+- `packages` says whether this process serves the packages of its pools (section 14.11). It is true on a front with `workbench.packages` and pools. With `false`, the page shows no section Packages.
 
 `GET /v1/bossmode/logo`, behind the authentication of the native API, serves the logo with its content type, `image/svg+xml` or `image/png`, and an `ETag`, the SHA-256 of the body in quotes. `If-None-Match` with the ETag answers 304. An SVG goes out as the sanitizer wrote it, and a PNG goes out as it is. The answer carries `Cache-Control: private, no-cache`, `X-Content-Type-Options: nosniff`, and the content security policy of a face (section 16.3). Without a logo, the route answers 404. An `img` element sends no bearer token, so the page reads the logo with `fetch` and shows it as a blob URL, as it shows a face.
 
@@ -3660,6 +3867,7 @@ Each capability is a Go function. Its route and its MCP tool call that function,
 | `bridge_mark_read` | `PUT /v1/bridges/{id}/read` | `bridges.Store.MarkRead` |
 | `bridge_post`, for a person | `POST /v1/bridges/{id}/messages` | `bridges.Store.Post` |
 | `orphans_list`, `orphans_remove` | `GET` and `DELETE /v1/fleet/orphans` | `fleet.Orphans`, `fleet.RemoveOrphans` |
+| `packages_get`, `packages_put` | `GET` and `PUT /v1/pools/{name}/packages` | `fleet.PackagesOf`, `fleet.PutPackages` |
 | `routine_put` | `PUT /v1/routines/{agent}/{name}` | the write of the routines |
 | `playbooks_list`, `playbook_get`, `playbook_put`, `playbook_delete` | `/v1/playbooks` | `playbooks.Service` |
 | `duty_write_check` | `POST /v1/duties/{name}/write-check` | `duties.Service.WriteCheck` |
