@@ -1,12 +1,24 @@
 # Featherweight
 
-Featherweight lets one person run a fleet of AI agents safely. You ask in plain words. Each agent works in a sealed sandbox, asks you before a risky step, and sleeps for free while it waits.
+Featherweight turns one request into an agent that works for you, again and again. You strike once. The agent repeats on schedule, splits big work into child runs, keeps going while you are away, and tells you what happened wherever you are.
 
-<div class="demo" data-demo="stack-hero" markdown>
+<div class="demo" data-demo="forge" markdown>
 
-You ask for twelve Puppet modules to move to Ansible. The workbench queues twelve jobs and wakes three agents, each in its own sandbox. An agent that needs GitHub gets a short-lived token from the workbench, and your sign-in never enters the sandbox. A call to a host that is not on the allow list is blocked at the wall. An agent that wants to push asks you first and sleeps while it waits. The other agents keep going. You press Allow, the agent wakes where it stopped, and the fleet sleeps again. You pressed two keys.
+You tell the manager: every weekday at 9, triage the new incidents and send me a summary. The manager shows the duty it will make, and one key saves it. Every weekday at 9, the duty wakes the agent, which does the work and sleeps again. A run can hand parts of its work to child runs, each in a sandbox of its own, within the limits of its tree. While you are away, the manager decides the routine approvals of the duty, and questions and destructive tools wait for you. Reports, failures, and questions reach you by email, Slack, Microsoft Teams, Discord, or your phone. When something needs you, you decide in one click, and the work goes on.
 
 </div>
+
+## What you just watched
+
+Each chapter of the movie is a part of Featherweight that you can use today.
+
+Strike once. You ask the [manager](guide/manager.md) in plain words. For work that repeats, it shows you the [duty](guide/duties.md) it will make, with the schedule read back in words, and saves it when you agree.
+
+It repeats, and it branches. A duty wakes its agent on time, with no one at the keyboard. A run can hand parts of its work to child runs, and each tree of runs stays within its limits. See [Profiles, tools, and skills](concepts/profiles-and-tools.md) and [Safeguards](concepts/safeguards.md).
+
+It works while you are away. A sandbox that waits sleeps for free and wakes where it stopped. For a duty, the manager can decide routine approvals for you, but never a question, a connect, or a destructive tool. See [The fleet](concepts/fleet.md) and [Duties](guide/duties.md).
+
+The news finds you, and you decide in one click. Reports, failures, and questions go to the channels you pick in Where to reach me, with a daily digest. A decision card shows what the agent wants in plain words. See [Decisions and activity](guide/decisions.md).
 
 ## Sealed in a sandbox
 
@@ -16,25 +28,13 @@ Your credentials stay outside. The workbench keeps your sign-ins to services suc
 
 The agent asks before a risky step. A policy decides each tool call: allow, ask a person, or deny. A budget caps the turns, the tool calls, the time, and the cost of each run. See [Safeguards](concepts/safeguards.md) and [Identity](concepts/identity.md).
 
-## Easy to drive
+## One job up close
 
-You talk to agents the way you talk to a team. [Bossmode](guide/index.md), the web page of the workbench, is a chat client whose members are agents. Claude Code and other MCP clients reach the same fleet through MCP tools.
+This scene follows one request through the stack, step by step. It shows the wall of the sandbox, the token that stands in for your sign-in, and the decision that wakes a sleeping agent. Press Play.
 
-A decision is one key. A card shows what the agent wants to do in plain words, and you allow it or deny it from wherever you are. Every step that an agent took is in its ledger, an append-only log that you can read. See [Decisions and activity](guide/decisions.md).
+<div class="demo" data-demo="stack-hero" data-autoplay="false" markdown>
 
-## More done per person
-
-One request can fan out to many agents at once. They work in parallel, each in its own sandbox, and they keep going while you are away.
-
-A waiting agent costs nothing. When a run waits for a person, its sandbox goes to sleep. A decision, a new job, or a message wakes it. The run goes on from the exact step where it stopped, also after a crash or a restart. Agents can also start work on their own, on a schedule, through [duties](guide/duties.md). See [The fleet](concepts/fleet.md).
-
-## Try the moment that matters
-
-The scene above has one moment that the rest depends on: an agent waits for you, and your answer wakes it. Here it is to try. Press either key.
-
-<div class="demo" data-demo="decision" markdown>
-
-A sleeping agent, `migrator-2`, asks to run `git push origin migrate/nginx`. Its run waits, and its sandbox is suspended. If you allow the command, the workbench sends the decision to the sandbox, and the sandbox wakes. The kernel reads its ledger, and the run goes on from the step where it stopped.
+You ask for twelve Puppet modules to move to Ansible. The workbench queues twelve jobs and wakes three agents, each in its own sandbox. An agent that needs GitHub gets a short-lived token from the workbench, and your sign-in never enters the sandbox. A call to a host that is not on the allow list is blocked at the wall. An agent that wants to push asks you first and sleeps while it waits. The other agents keep going. You press Allow, the agent wakes where it stopped, and the fleet sleeps again. You pressed two keys.
 
 </div>
 
@@ -72,4 +72,7 @@ Featherweight is two programs and one web page, on top of two platforms.
 - `featherweight-workbench/README.md`
 - `featherweight-workbench/docs/ARCHITECTURE.md`
 - `featherweight-workbench/fleet/types.go`
+- `featherweight-workbench/notify/settings.go`
+- `featherweight-workbench/duties/schedule/say_test.go`
+- `featherweight-kernel/fw/config.go`
 - `featherweight-bossmode/README.md`

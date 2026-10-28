@@ -125,15 +125,20 @@ line that settles, or a light that changes.
 
 Nothing moves on load, with one exception. The breath of an amber light is
 not a motion on load: it is the state of something that waits for you, as in
-bossmode, so a demo that opens on a waiting card shows it breathing. The opening scene of the home
-page, `stack-hero`, plays on its own, because the owner asked for an
-animated opening on 2026-10-27. The packets that fly between its columns
-are the one motion beyond the four of bossmode. It shows one job through
-the stack and the three values of the product: easy to drive, sealed in a
-sandbox, and more done per person. It has a Pause key and a bar of steps that
-jump to any step. It stops while it is out of sight or the tab is hidden.
-Under reduced motion it does not play: the reader steps through it with
-Next step. Reduced motion shows every step of every demo at once.
+bossmode, so a demo that opens on a waiting card shows it breathing.
+
+The exception is the opening movie of the home page, `forge`, because the
+owner asked for a striking animated opening on 2026-10-27 and again, as a
+movie, on 2026-10-28. It tells, in six chapters and 50 seconds, how one strike
+becomes an agent that repeats, branches, works while you are away, reports to
+you, and comes back for one decision. Its screen is a display window set into
+the faceplate, so it keeps the graphite values in both themes, and its sparks
+use the signal orange of the primary key, because the strike is the press of
+that key. It has Pause, a bar of chapters, and Watch again. It stops while it
+is out of sight or the tab is hidden. Under reduced motion it shows a still
+frame of each chapter and plays only when the reader presses Play the movie.
+The scene `stack-hero` lower on the page waits for Play
+(`data-autoplay="false"`). Reduced motion shows every step of every demo at once.
 
 ## 5. The demos
 

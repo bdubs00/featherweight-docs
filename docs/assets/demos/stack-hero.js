@@ -110,7 +110,7 @@ const REQUEST = 'Migrate the 12 Puppet modules to Ansible.';
 
 class Stopped extends Error {}
 
-export default function mount(root) {
+export default function mount(root, opts = {}) {
   root.textContent = '';
   root.classList.add('demo', 'is-live', 'hero');
 
@@ -252,7 +252,8 @@ export default function mount(root) {
 
   // ---------- time: a clock that stops on Pause and on a jump ----------
   let instant = false;
-  let paused = false;
+  // A page can hold the scene until the reader presses Play: data-autoplay="false".
+  let paused = opts.autoplay === 'false';
   let hiddenNow = false;
   let run = 0;
   const flying = new Set();

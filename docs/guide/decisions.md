@@ -89,6 +89,16 @@ The orange key of this card names the service, such as Connect Tickets, but a cl
 
 The server then tells every worker that you connected. Each call of yours that waits for that service goes on, and its card says that you allowed it, with the note `connected`. Deny skips the service instead: the call fails, and the agent reads that you chose not to connect.
 
+## While a decision waits
+
+A run that waits for your decision holds no process. With nothing to do, its sandbox goes to sleep and costs nothing. Your answer wakes the sandbox, and the run goes on from the step where it stopped. Press either key to see it.
+
+<div class="demo" data-demo="decision" markdown>
+
+A sleeping agent, `migrator-2`, asks to run `git push origin migrate/nginx`. Its run waits, and its sandbox is suspended. If you allow the command, the workbench sends the decision to the sandbox, and the sandbox wakes. The kernel reads its ledger, and the run goes on from the step where it stopped.
+
+</div>
+
 ## Decisions while away
 
 A duty, work that an agent starts on its own, can run while you sleep. One of its runs can need a decision. The setting `whileAway` of the duty says what happens then. This rule holds only for the runs of a duty. A decision of a bridge or a conversation always waits for a person.

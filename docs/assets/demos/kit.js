@@ -193,6 +193,11 @@ function markPath(cells) {
   return parts.join('');
 }
 
+/** markCells returns the 25 cells and the hue of the mark of a name, for a demo that draws a mark itself. */
+export function markCells(name) {
+  return markOf(name);
+}
+
 /** mark is the face of an agent, as bossmode draws it. ink: true for the manager. */
 export function mark(name, size = 32, opts = {}) {
   const g = markOf(name);
