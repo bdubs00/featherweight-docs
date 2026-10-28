@@ -1,155 +1,119 @@
 # Use a fleet from Claude Code
 
-The main path into Featherweight is an MCP client that talks to the front. The front is `fw-workbench` outside the sandboxes, and a fleet is the set of workers behind it, one `fw` per AX Task. Claude Code reaches the front as one MCP server and sees every worker through it. This page says how the server is reached, lists its tools, and walks through the work of one person: a run, an approval, a job, a connection, a branch, and a new agent.
+Claude Code reaches a whole fleet of agents as one MCP server. The workbench serves the tools, and every agent sandbox behind it answers through them. This walk-through connects Claude Code to a workbench and does the work of one person: a run, a decision, a batch of jobs, a connection to a service, a branch, and a new agent.
 
-## How Claude Code reaches the front
+## Before you start
 
-The MCP server of the front listens at `/mcp` over Streamable HTTP. A request with the header `Mcp-Protocol-Version` of `2026-07-28` or later is served without a session. Every other request opens a session of the 2025-11-25 revision with `Mcp-Session-Id`. Both answer the same tools.
+You need a running workbench. It can serve a fleet on a cluster, as [A fleet](../deployment/fleet.md) deploys it. It can also be one `fw-workbench serve` on your laptop, as [Run the workbench on your machine](workbench-local.md) shows. You also need a way to sign in: an account at the OpenID Connect issuer of the workbench, or its static token.
 
-With agentgateway, one URL serves the front. The gateway routes `/mcp` through an MCP backend with a login policy, and `/ui` and `/v1` as plain HTTP. Add the server to Claude Code with its URL:
+The MCP server of the workbench listens at `/mcp` over Streamable HTTP. A request of the protocol revision `2026-07-28` or later needs no session. An older client opens a session of the revision `2025-11-25`. Both get the same tools.
 
-```sh
-claude mcp add --transport http fw-fleet https://fleet.example.com/mcp
+## Connect Claude Code
+
+1. Add the server with its public address. Behind agentgateway with a login policy, Claude Code does the login itself through the issuer of the workbench:
+
+    ```sh
+    claude mcp add --transport http fw-fleet https://fleet.example.com/mcp
+    ```
+
+    Without an issuer, send the static token of the fleet as a bearer token:
+
+    ```sh
+    claude mcp add --transport http fw-fleet https://fleet.example.com/mcp --header "Authorization: Bearer <token>"
+    ```
+
+2. Ask Claude Code who you are and what the fleet holds. It calls `whoami`, `fleet`, and `agents_list`.
+
+    The name of the server is the prefix of its tools, so `fleet` appears as `mcp__fw-fleet__fleet`. A worker is one sandbox, an AX Task, that runs the work of one agent. The text of `fleet` names the agents first, each with its workers awake, asleep, or stopped, such as `manager: 1 worker, awake; 1 run works`. The members follow by name, such as `default/manager-0`. A member is one `fw` process of the fleet, here one worker. A member is `live` for a Task that runs, `quiet` for a Task that sleeps, and `stopped` otherwise.
+
+Every result holds a text and, in `structuredContent`, the object that the text describes. For a work tool, that object is the run. If the run failed, `isError` is true.
+
+## Run, read, and decide
+
+1. Start a run with `run`. A run is one conversation with an agent, with its own budget and its own log, the ledger. `agent` names a profile, the configuration of an agent, from `agents_list`. `member` names a worker from `fleet`:
+
+    ```json
+    {"agent": "triage", "input": "Sort ticket 4182.", "title": "Ticket 4182"}
+    ```
+
+    With `wait` true, the default, the call waits until the run finishes or needs a person. It sends one progress notification per turn. A run on another member never waits: the call returns the run object at once.
+
+2. Read the run. `run_status` gives the run object: its state, its output, a pending decision, and its usage. `run_result` gives what the run produced, the files that it changed, and what it needs next. `run_events` pages through its ledger: `from` reads forward, `before` reads back, and `compact` cuts each tool output short.
+
+3. Answer a decision. The policy of a profile holds some calls for a person, such as `bash` under `ask: [destructive]`. A client with form elicitation shows a form with `decision` and `note`. Any other client gets the run in the state `input-required`, and `pending.id` names the decision. Decide it with `approve`:
+
+    ```json
+    {"runId": "01JA...", "approvalId": "ap_7f3", "decision": "allow"}
+    ```
+
+    With `rule` true, `allow` also adds the tool to the policy of the pool whose workers run the agent, so they stop asking. A question of the tool `ask_user` is a decision too: answer it with `allow` and the answers in `content`, or in `note` for free text. The run waits for a decision from any surface, so the card in bossmode decides the same one.
+
+4. Send a follow-up with `send`, with `runId` and `content`. A finished run starts a new turn. For a run that failed at a limit, also pass a `budget`, and the run goes on with the new limits. `cancel` stops a run, and only `cancel` does.
+
+## Send a batch of jobs
+
+A job is one run request on a queue. Call `enqueue` with a profile, a batch name, and one item per job:
+
+```json
+{"agent": "reviewer", "batch": "reviews-20261027",
+ "items": [{"input": "Review pull request 41.", "title": "PR 41"},
+           {"input": "Review pull request 42.", "title": "PR 42"}]}
 ```
 
-Claude Code does the login itself through the OpenID Connect issuer of the front. A developer without an issuer sends the static token of the fleet as a bearer token instead. The name you give the server is the prefix of its tools in Claude Code. This site uses `fw-fleet`, so the tool `run` appears as `mcp__fw-fleet__run`.
+The call returns at once with `batch`, `queue`, and `count`. Every run acts as you and carries the batch name. The workbench puts the jobs on the queue of the pool that runs the profile, and it wakes the sleeping Tasks of that pool. A pool is a set of workers that run one profile. Follow the batch with the tool `batch` and the batch name. It gives the runs by state, the members that hold them, and the runs that wait for you. It also gives the failures, the jobs still in the queue, and the usage. One call takes at most 500 items.
 
-Every tool result holds a text and, in `structuredContent`, the object that the text describes. For a work tool that object is the run. If the run failed, `isError` is true.
+## Connect a service, branch a run, add an agent
+
+Some MCP servers act for the person who started the run. If you never connected such a service, the run waits in `input-required`, and `pending.connect.server` names it. A client with URL elicitation gets a link to open in the browser. Any other client gets the link in the text of the run. After the sign-in, the run goes on by itself. `connections` lists your services, and `disconnect` removes your grant for one. `approve` cannot allow a connection, because a click is not a grant.
+
+`fork` branches a run into a new run that keeps the events of the source up to `seq`. With `spawn` true, the branch runs in a Task of its own, with a workspace of its own. The call answers at once, and `run_status` follows the branch.
+
+`agent_builder` starts a conversation that proposes a profile. Pass `input`, what the agent handles and what it must never do, or `fromRun`, a completed run to turn into an agent. Answer its questions with `send`, and read its proposal with `run_result`. The builder saves nothing. Check the profile with `agent_put` and `dryRun` true, then save it with `agent_put`. A new profile gets you as its owner. On a workbench with a default template, it also gets a pool of two workers: see [Pools and templates](../deployment/pools.md).
 
 ## The tools
 
-| Group | Tool | What it does |
-|---|---|---|
-| Work | `run` | start a run of a profile with `input`, and wait for it by default |
-| | `run_status` | the run object: state, output, pending approval, and usage |
-| | `send` | add a follow-up message to a run, with an optional `budget` that the run gets first |
-| | `cancel` | stop a run, its model call, and its tools in flight |
-| | `approve` | allow or deny the pending approval of a run, or answer its question |
-| | `fork` | branch a run into a new run, in the same Task or in a Task of its own |
-| | `run_budget` | change the limits of a run, also of a run that is running |
-| Jobs | `enqueue` | send one run per item to the queue of a profile, under one batch name |
-| | `batch` | how a job goes: the queued, the runs by state, the members, the failures, the usage |
-| Reading | `run_result` | what a run produced and what it needs next, as a person reads it |
-| | `run_events` | one page of the events of a run, forward with `from` or back with `before` |
-| | `run_file` | a file that a run changed, as text, as an image, or with `raw` as bytes |
-| | `runs_list` | the runs you can see, with filters by agent, state, member, batch, and `by` |
-| Agents | `agents_list`, `agent_get` | the profiles you can see, and one profile in full |
-| | `agent_put`, `agent_delete` | create, replace, or remove a profile, with `dryRun` to check one |
-| | `agent_builder` | start the conversation that proposes a profile |
-| | `capabilities` | the tools of the runtime in plain words |
-| Fleet and people | `fleet` | the members and the pools you can see |
-| | `connections`, `disconnect` | the services that act for you, and the removal of one grant |
-| | `whoami` | your principal, your role on every agent, and your teams |
-| | `dashboard` | the MCP App, or the home as text |
-| Deprecated | `usage` | a sum of the runs, kept for old clients |
+| Group | Tools |
+|---|---|
+| Work | `run`, `run_status`, `send`, `approve`, `cancel`, `fork`, `run_budget` |
+| Jobs | `enqueue`, `batch` |
+| Reading | `run_result`, `run_events`, `run_file`, `runs_list`, `inbox` |
+| Agents | `agents_list`, `agent_get`, `agent_put`, `agent_delete`, `agent_builder`, `capabilities`, `faces_put` |
+| Fleet and pools | `fleet`, `pools_list`, `pool_put`, `pool_delete`, `templates_list`, `packages_get`, `packages_put`, `orphans_list`, `orphans_remove` |
+| Bridges | `bridge_open`, `bridge_list`, `bridge_read`, `bridge_post`, `bridge_react`, `bridge_add_member`, `bridge_remove_member`, `bridge_close`, and more |
+| Duties and notices | `duty_preview`, `duty_put`, `duty_get`, `duties_list`, `duty_run_now`, `duty_pause`, `notifications_get`, `notifications_put`, and more |
+| Wiki and skills | `pages_list`, `pages_read`, `pages_write`, `pages_search`, `pages_history`, `skills_list`, `skill_send` |
+| People | `whoami`, `connections`, `disconnect`, `dashboard` |
 
-## Walk-through
+A workbench without a feature offers none of its tools. The pool tools need pools or templates, and the package tools need `workbench.packages`. `dashboard` opens an MCP App, a page that the host renders in the chat. A host without MCP Apps gets the same home as text. [MCP tools](../reference/mcp-tools.md) lists every argument of every tool.
 
-### Start a run and read its result
+## Retries and disconnects
 
-Call `run` with the task. `agent` names a profile from `agents_list`, and `member` names a worker from `fleet`:
+- `wait` false makes `run` return the run object at once. Poll `run_status`, or read the resource `fw://runs/{id}`. The resources read the runs of the workbench itself only, and the tools reach every member.
+- `requestId` makes a retry safe. A retried `run` with the same `requestId` returns the same run instead of a second one.
+- If the connection closes, the call ends and the run goes on. Read it again with `run_status`.
+- `continues` on `run` names a run of a worker that a pool replaced. The new run starts with a summary of the earlier conversation.
 
-```json
-{"agent": "ops", "member": "default/fw-fleet-alpha",
- "input": "Reply with the single word pear and nothing else. Use no tool."}
-```
+## Where to go next
 
-With `wait` true, the default, the call waits until the run finishes or needs input. If the request carries a progress token, the call sends one progress notification per turn. A run on another member never waits: the call returns the run object at once, with `id` and `state`. Read it with `run_status`, or with `run_result` for the answer, the files that changed, the steps, and the next actions. `run_events` pages through the ledger: `from` reads forward, `before` reads back, and `compact` cuts each tool output to 200 characters.
+<div class="paths" markdown>
 
-`run` also takes `title`, `instructions`, `profile`, `budget`, `files`, `metadata`, and `requestId`. `profile` is an inline profile that overlays the named profile for this run alone.
+- [Bossmode at a glance <span>The same fleet in the browser</span>](../guide/index.md)
+- [MCP tools <span>Every tool and every argument</span>](../reference/mcp-tools.md)
 
-### Send a follow-up
-
-Call `send` with `runId` and `content`. A finished run starts a new turn. If the run failed at a limit, pass `budget` too: the run gets the new limits before it reads the message. Every limit counts the whole run.
-
-### Approve a held tool call
-
-The policy of a profile holds some tool calls, such as `bash` under the rule `ask: [destructive]`. How the hold reaches you depends on the client:
-
-- A client with form elicitation gets a form with the fields `decision`, `allow` or `deny`, and `note`. A modern client gets it as an `input_required` result with a signed `requestState`. It retries `run` with the answer and the unchanged `requestState`, and the retry continues the same run.
-- Any other client gets the run object in the state `input-required`. `pending.id` is the approval, and `pending.tool` and `pending.input` say what waits.
-
-Decide with `approve`:
-
-```json
-{"runId": "01JA...", "approvalId": "ap_7f3", "decision": "allow"}
-```
-
-A question from the tool `ask_user` is an approval with a schema. Answer it with `decision` `allow` and the answers in `content`, or in `note` for a free-text question. With `rule` true, `allow` also adds the tool to the policy of the pool whose worker runs the run, so its workers stop asking. The run waits for a decision from any surface, so the page at `/ui` decides the same approval.
-
-### Send a job
-
-Call `enqueue` with a profile and one item per run:
-
-```json
-{"agent": "reviewer", "batch": "reviews-20261020-1200",
- "items": [{"input": "Review pull request 41.", "title": "piece 1"},
-           {"input": "Review pull request 42.", "title": "piece 2"}]}
-```
-
-The call returns at once with `batch`, `queue`, and `count`. Every run acts as you and carries the batch name in the metadata `fw.batch`. A worker that sleeps reads no queue, so the front wakes the suspended Tasks that serve the profile. Follow the job with `batch` and the batch name. Its result holds `finished`, `total`, `states`, `members`, `waiting`, `failed`, `queued`, and `usage`. The job is finished once no item waits in the queue and every run ended. Then `runs_list` with `batch` lists the runs, and `run_result` reads each one.
-
-### See the fleet
-
-Call `fleet` without arguments. Each member has a name such as `default/fw-fleet-alpha`, a state, and the time it was last heard. It also lists the agents you can see and counts its active runs and its runs that wait. The state is `live` for a Task that runs, `quiet` for a Task that sleeps or is pending, and `stopped` otherwise. The pools of the front follow, each with the Tasks it wants, the Tasks that exist, and the reason for a gap.
-
-### Connect a service that acts as you
-
-Some MCP servers of a profile act for the person who started the run, with `auth.oauth.grant: user`. If you have not connected the service, the run waits in `input-required`, and `pending.connect.server` names it. The front asks in the shape your client supports:
-
-- A client with URL elicitation gets a link to open in the browser, `<base>/ui#connect/<server>/<run>`. The run goes on by itself after the sign-in.
-- A client with form elicitation gets a form with the link and the choices `done` and `skip`.
-- Any other client gets the link in the text of the run.
-
-`connections` lists the services that act for you, connected or not, each with its link. `disconnect` removes your grant for one service. `approve` cannot allow a connect request, because a click is not a grant. A deny skips the service, and the run goes on without it.
-
-### Branch a run
-
-Call `fork` with `runId` and a new `input`. The branch keeps the events of the source up to `seq`, every event without `seq`, and goes on in the same Task. Its metadata carries `fw.forkOf` and `fw.forkSeq`. The source does not change.
-
-```json
-{"runId": "01JA...", "input": "Now reply with the single word plum and nothing else.", "spawn": true}
-```
-
-With `spawn` true, the branch runs in a Task of its own, with a workspace of its own. The call answers at once: the branch is queued on the new Task, and the source answers for it until the new Task has it. Follow it with `run_status`. Its `member` names the child Task, which the `fleet` tool lists once it runs.
-
-### Build an agent and save it
-
-Call `agent_builder` with exactly one of two arguments. `input` says what the agent handles and what it must never do. `fromRun` is the id of a completed run of yours to turn into an agent. The call returns the run of the builder at once. Answer its questions with `send` on that run. Read its proposal with `run_result` or `run_events`: the item of the tool `propose_agent` carries `profile`. The builder never saves anything. Check the profile with `agent_put` and `dryRun` true, then save it with `agent_put`:
-
-```json
-{"name": "release-notes", "description": "Writes release notes from merged pull requests",
- "system": "You write release notes.", "tools": ["files", "git.*"], "policy": {"ask": ["bash"]}}
-```
-
-A new profile gets you as its owner. With pools, the profile goes to the pool whose workers run it, or to the pool that `pool` names. Every worker of that pool takes it. `agents_list` shows it with its pool.
-
-## wait, requestId, disconnects, and the gateway
-
-- `wait` false makes `run` return the run object at once. Poll `run_status`, or read the resource `fw://runs/{id}`. The resources read the runs of the front itself only, and the tools reach every member.
-- `requestId` is an idempotency key. A retried `run` with the same `requestId` returns the same run instead of a second one.
-- If the connection closes, the `run` call ends but the run continues. Read it again with `run_status`. Only `cancel` stops a run.
-- A gateway bounds a call. agentgateway cuts a call after ten seconds, so a long run must not be held open through it. Start it with `wait` false, or with `member`, and read it later. `fork` with `spawn` answers at once for the same reason, and `enqueue` never waits.
-
-## Next steps
-
-- [MCP tools](../reference/mcp-tools.md) lists every argument of every tool.
-- [The fleet](../concepts/fleet.md) explains members, jobs, pools, and the suspend of an idle Task.
-- [Identity](../concepts/identity.md) explains principals, roles, and connections.
-- [Safeguards](../concepts/safeguards.md) explains the policy and the budget behind an approval.
-- [A fleet](../deployment/fleet.md) deploys the front and the workers.
-- The design of the server is in [section 3 of the workbench architecture](../design/workbench-architecture.md#3-mcp-server-work-intake), with [the approvals](../design/workbench-architecture.md#33-approvals-over-mcp), [the connections](../design/workbench-architecture.md#34-connections-over-mcp), and [the disconnects](../design/workbench-architecture.md#35-cancellation-and-disconnects).
+</div>
 
 ## Sources
 
 - `featherweight-workbench/surface/mcp/mcp.go`
 - `featherweight-workbench/surface/mcp/tools.go`
-- `featherweight-workbench/surface/mcp/work.go`
 - `featherweight-workbench/surface/mcp/manage.go`
 - `featherweight-workbench/surface/mcp/batch.go`
-- `featherweight-workbench/surface/mcp/connect.go`
 - `featherweight-workbench/surface/mcp/fleet.go`
-- `featherweight-workbench/surface/mcp/files.go`
-- `featherweight-workbench/surface/mcp/resources.go`
-- `featherweight-workbench/docs/ARCHITECTURE.md`, sections 3, 4.5, 4.9, 6.1, and 14.9
+- `featherweight-workbench/surface/mcp/connect.go`
+- `featherweight-workbench/workers/tools.go`
+- `featherweight-workbench/bridges/tools.go`
+- `featherweight-workbench/duties/tools.go`
+- `featherweight-workbench/notify/tools.go`
+- `featherweight-workbench/inbox/inbox.go`
+- `featherweight-workbench/docs/ARCHITECTURE.md`, sections 3, 4.7, 4.9, 4.19, 6.1, 11, and 14.10
 - `featherweight-workbench/examples/agentgateway/README.md`

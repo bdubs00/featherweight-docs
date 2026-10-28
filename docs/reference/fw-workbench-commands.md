@@ -1,121 +1,91 @@
+---
+wide: true
+---
+
 # fw-workbench commands
 
-`fw-workbench` is the kernel with the workbench for people: the page at `/ui`, the browser sign-in, the MCP server, the fleet, the connections, the pools, and the agent builder. The binary links the package `cli` of the kernel, so it takes every verb of `fw` with the same flags. Read the [fw commands](fw-commands.md) page for the verbs and the flags. This page lists only what the workbench adds or changes.
+The workbench binary is the kernel plus the parts for people: bossmode, the MCP server, the fleet, and the stores of bridges, duties, and the wiki. It takes every command of the [kernel](fw-commands.md) with the same flags. This page lists only what it adds or changes.
 
-The form is the same: `fw-workbench [global flags] <verb> [flags] [arguments]`. The configuration lookup, the exit codes, and the global flags are the same too. A binary started under the name `ax-task-runner` runs `serve`, as `fw` does. The design document describes the build in [section 1.2](../design/workbench-architecture.md#12-build).
+The form, the configuration lookup, the global flags, and the exit codes are those of `fw`. A binary started under the name `ax-task-runner` runs `serve`, as `fw` does. The design document describes the build in [section 1.2](../design/workbench-architecture.md#12-build). In a fleet, the workbench is called the [front](../glossary.md#d-to-h), because it stands in front of the workers.
 
-## What every verb gains
+## Commands only the workbench has
 
-`cmd/fw-workbench/drivers.go` links every driver of the kernel binary, and the packages of the workbench on top. The packages change the verbs in these ways:
+`cmd/fw-workbench/main.go` handles these commands before it hands the arguments to the kernel. They take `-config file` and no other global flag. Without a configuration file, they exit with `1` and ask for one. A bad command line exits with `2`.
 
-- The verb `mcp` works, because the package `surface/mcp` sets `cli.ServeMCPStdio`.
-- The verbs `agents put` and `agents delete` write profiles, because the package `agents` sets `cli.AgentsPut` and `cli.AgentsDelete`.
-- The verb `doctor` adds three lines: `connections`, `fleet`, and `sources`. The ax lines of the kernel stay.
-- Every verb that builds an agent adds the control plane of `workbench.access.external`, through `cli.AgentOptions`. With that block, `whoami` reports `acts: always`, and the control plane decides every request instead of `access.admins`.
-- The verb `card` works, because the binary links the A2A surface.
-- The block `workbench` of `fw.yaml` loads, because the packages `teams` and `titles` claim it with `fw.RegisterExtension`.
-
-Two verbs of `fw` lose a function. `drivers.go` of the workbench does not import the package `env` or the package `harness` of the kernel. `fw-workbench env dockerfile` therefore fails with the message that the package `env` is not linked, and the block `harness` of `fw.yaml` has no driver in this binary.
-
-## fw-workbench serve
-
-Serves every surface of the kernel and the surfaces of the workbench on one listener. The flags are the flags of `fw serve`. The package `surface/mcp` registers a default, so `surfaces` of the configuration gains `mcp` without a change to the file. The package `surface/web` mounts its routes as an extension of the native API. The [HTTP API](http-api.md) page lists them.
-
-```sh
-fw-workbench serve [flags]
-```
-
-The verb also starts the services that the packages register with `fw.RegisterService`: the fleet, the connections, and the sources. The fleet runs the reconciler of the pools. A verb that runs one piece of work, such as `run` or `mcp`, starts no service. It therefore never joins a fleet and keeps no connection. The run annotator of the package `teams` writes the teams of a person into the metadata of each run. The package `titles` asks a model for a title the first time the workbench shows a run without one.
-
-## fw-workbench mcp
-
-Serves the MCP server over standard input and output, for a desktop client or an editor. Every call acts as the local principal `local:<user>` of kind `local`. A profile that the client creates names that principal as its owner. The entries `local:*` and `kind:local` in `access.admins` give it the admin role.
-
-```sh
-fw-workbench mcp
-```
-
-The verb has no flags of its own. Logs go to standard error, because standard output carries the protocol. The server is the same server as the one at `/mcp`. The [MCP tools](mcp-tools.md) page lists its tools, resources, and prompts. The key that signs an approval retry comes from `FW_MCP_STATE_KEY`, else from the file `mcp-state.key` under the home directory.
-
-## fw-workbench agents
-
-Lists the agent profiles, prints one, or puts and deletes one. The flags and the arguments are those of `fw agents`. The difference is that `put` and `delete` work.
-
-```sh
-fw-workbench agents [flags] [<name> | put <file.yaml> | delete <name>]
-```
-
-| Flag | Meaning | Default |
+| Command | What it does | Flags and details |
 |---|---|---|
-| `-json` | Print the profiles as JSON | off, a table or YAML |
-| `-name name` | `put`: the profile name, in place of the one in the file | the `name` field, else the file name |
+| `fw-workbench pools render [file]` | Prints the Workspaces and the Tasks that the front applies for its pools, as YAML documents in the order of the apply. It shows the pools of `workbench.pools`, then the runtime pools that people created from a template | `-config file`: the configuration of the front. The argument wins, then `-config`, then `$FW_CONFIG`, `./fw.yaml`, or `$FW_HOME/fw.yaml` |
+| `fw-workbench pages export <dir>` | Writes each page of the wiki as one file under `dir`, at the path of the page. The index goes to `_index.md`. A file of the same path is replaced, and other files stay | `-config file`. It needs `bus.driver: nats` |
+| `fw-workbench pages import <dir>` | Writes each `.md` file under `dir` as a new version of the page at its path. A file that holds the text of its page already changes nothing. It names every file that it leaves out | `-config file`. It needs `bus.driver: nats`. The writer of each version is `local:<user>` |
 
-`put` reads the file with `config.LoadProfile` and checks the profile with the kernel. Then it authorizes the local principal and writes `<home>/agents/<name>.yaml` through the profile store of the package `config`. `delete` removes that file. A running server reads the change at its next start. A profile that `fw.yaml` defines cannot change here, because the configuration wins at the next start. A put whose file has no `access` block keeps the access block of the profile that it replaces. A new profile names the local principal as its owner. The verb prints `created`, `replaced`, or `deleted` with the directory.
+`pools render` puts a placeholder in place of every value that the front copies from its own environment, such as `FW_API_TOKEN`. It merges the overlay of each pool: the profiles and the rules that people added through the bus. If the overlay cannot be read, the command prints the pool without it and says so on standard error. See [section 14.2](../design/workbench-architecture.md#142-the-dry-run).
 
-On a front with pools, the package `agents` writes to a place: the store of the process, or the overlay of the pool whose workers run the profile. The verb uses the store of the process. See [section 14.9](../design/workbench-architecture.md#149-profiles-and-rules-of-a-pool).
-
-## fw-workbench pools
-
-Prints the Workspaces and the Tasks that the front applies for the pools under `workbench.pools`. The kernel does not know this verb, so `cmd/fw-workbench/main.go` handles it before it hands the arguments to the kernel. The only subverb is `render`.
+Both `pages` commands reach the wiki in the key-value bucket `<stream>_PAGES` of the NATS bus, and each run of a command stops after five minutes. With the bus `mem`, the wiki lives in the memory of the front, so the commands refuse. See [section 15.5](../design/workbench-architecture.md#155-export-and-import).
 
 ```sh
-fw-workbench pools render [-config file] [file]
+fw-workbench pools render -config front.yaml > applied.yaml
+fw-workbench pages export -config front.yaml ./wiki-backup
 ```
 
-| Flag | Meaning | Default |
-|---|---|---|
-| `-config file` | The configuration file of the front | the argument, else `$FW_CONFIG`, `./fw.yaml`, or `$FW_HOME/fw.yaml` |
+## Commands that change
 
-The output is a stream of YAML documents in the order of the apply, one Workspace and one Task per worker. Every value that the front copies from its own environment, such as `FW_API_TOKEN`, is a placeholder. The verb merges the overlay of each pool into the output. The overlay holds the profiles and the rules that people added through the key-value store of the bus. The output therefore shows what the front applies. If the overlay cannot be read, the verb prints the pool without it and says so on standard error.
+| Command | What changes in the workbench |
+|---|---|
+| `fw-workbench serve` | It also starts the services of the workbench: the fleet, connections, sources, bossmode, bridges, conversations, duties, faces, notifications, pages, playbooks, and routines. The surface `mcp` joins `surfaces` by default. The routes of the workbench mount on the native API |
+| `fw-workbench mcp` | It works. It serves the same MCP server as `/mcp` over standard input and output, as `local:<user>` of kind `local`. Logs go to standard error |
+| `fw-workbench agents put <file.yaml>` | It works. It checks the profile, authorizes the local principal, and writes `<home>/agents/<name>.yaml`. It prints `created` or `replaced` |
+| `fw-workbench agents delete <name>` | It works. It removes the file and prints `deleted` |
+| `fw-workbench doctor` | It adds seven lines after the bus check: `connections`, `fleet`, `sources`, `duties`, `notify`, `bossmode`, and `manager` |
+| `fw-workbench whoami` | With `workbench.access.external`, it asks the control plane whether the principal is an admin. If the control plane does not answer, it prints `admin: unknown` and exits with `1` |
+| `fw-workbench run`, `events`, `replay` | With `workbench.access.external`, every command acts as the local principal, and the control plane decides for it |
 
-The verb does not take the global flags of the kernel. The exit code is `0` on success. A configuration that does not load, or a pool that does not fit, gives `1`. A bad command line gives `2`. Without a configuration file, it exits with `1` and asks for one. The design document describes the dry run in [section 14.2](../design/workbench-architecture.md#142-the-dry-run).
+A command that runs one piece of work, such as `run` or `mcp`, starts no service. It therefore never joins a fleet, keeps no connection, and has no wiki. The tool `propose_agent` joins `tools.builtin` by default, but a profile still has to name it.
 
-## fw-workbench doctor
+### fw-workbench agents
 
-Runs the checks of `fw doctor` and the three checks of the workbench. The flag is the flag of `fw doctor`.
+The flags are those of `fw agents`: `-json`, and `-name name` for `put`. A put whose file has no `access` block keeps the access block of the profile that it replaces. A new profile names the local principal as its owner. A profile that `fw.yaml` defines cannot change here, because the configuration wins at the next start. A running server reads the change at its next start.
 
-```sh
-fw-workbench doctor [flags]
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-timeout limit` | The limit of each check that reaches a provider or a server | `10s` |
+### The doctor lines
 
 | Line | What it checks |
 |---|---|
-| `connections` | The store of the grants and the conditions of each `tools.mcp` entry with `auth.oauth.grant: user` |
-| `fleet` | The configuration of the fleet, the ax API, and the pools |
-| `sources` | The webhook and poll sources of `workbench.sources` |
+| `connections` | The grant store and each `tools.mcp` entry with `auth.oauth.grant: user` |
+| `fleet` | The atespaces and the egress stream that it reads, and the queues. Then the index of the runs, the suspend and orphan timers, the pools, and the templates |
+| `sources` | The webhook and poll sources of `workbench.sources` and their secrets |
+| `duties` | Where the duties live, the hosts that a check can reach, and the secrets that a duty can name |
+| `notify` | Where the notifications of people live, the default ntfy server, the hosts that a channel can reach, and the link of a notification |
+| `bossmode` | Whether the page is on, where its files come from, and the stores of the wiki, the faces, and the bridges |
+| `manager` | The profile of the manager, the pool that runs it, and its trusted `tools.mcp` entry that reaches the front |
 
 If any line fails, the exit code is `1`, as with `fw doctor`.
 
-## fw-workbench whoami and run
+## What the workbench leaves out
 
-`whoami` prints the same principal as `fw whoami`. With `workbench.access.external`, the verb asks the control plane whether the principal has the admin role. If the control plane does not answer, the verb prints `admin: unknown` and exits with `1`. The last line then reads `acts: always`.
+`cmd/fw-workbench/drivers.go` does not import the packages `env` and `harness` of the kernel. So `fw-workbench env dockerfile` fails with the message that the package `env` is not linked. The blocks `environment` and `harness` of `fw.yaml` have no driver in this binary. A worker of a pool runs `fw`, which has both.
 
-`run`, `events`, and `replay` take the same flags as in `fw`. With `workbench.access.external`, every run acts as the local principal, and the control plane decides for it. Without that block, the rules of `access` decide, as in `fw`.
+<div class="paths" markdown>
+
+- [Workbench configuration <span>The block workbench</span>](workbench-configuration.md)
+- [MCP tools <span>What fw-workbench mcp serves</span>](mcp-tools.md)
+
+</div>
 
 ## Sources
 
 - `featherweight-workbench/cmd/fw-workbench/main.go`
 - `featherweight-workbench/cmd/fw-workbench/drivers.go`
 - `featherweight-workbench/cmd/fw-workbench/pools.go`
+- `featherweight-workbench/cmd/fw-workbench/pages.go`
 - `featherweight-workbench/agents/agents.go`
-- `featherweight-workbench/access/config.go`
-- `featherweight-workbench/fleet/fleet.go`
-- `featherweight-workbench/fleet/config.go`
-- `featherweight-workbench/connections/connections.go`
-- `featherweight-workbench/sources/sources.go`
-- `featherweight-workbench/teams/teams.go`
-- `featherweight-workbench/titles/titles.go`
 - `featherweight-workbench/surface/mcp/mcp.go`
-- `featherweight-workbench/surface/mcp/state.go`
-- `featherweight-workbench/surface/web/web.go`
-- `featherweight-workbench/README.md`
+- `featherweight-workbench/tools/builder/propose_agent.go`
+- `featherweight-workbench/connections/doctor.go`
+- `featherweight-workbench/fleet/doctor.go`
+- `featherweight-workbench/sources/doctor.go`
+- `featherweight-workbench/duties/doctor.go`
+- `featherweight-workbench/notify/doctor.go`
+- `featherweight-workbench/bossmode/doctor.go`
+- `featherweight-workbench/manager/doctor.go`
 - `featherweight-kernel/cli/cli.go`
 - `featherweight-kernel/cli/identity.go`
-- `featherweight-kernel/cli/verbs.go`
-- `featherweight-kernel/cli/env.go`
-- `featherweight-kernel/cmd/fw/driver_env.go`
-- `featherweight-kernel/cmd/fw/driver_harness.go`
+- `featherweight-kernel/cli/doctor.go`

@@ -1,0 +1,72 @@
+/* Code blocks: a recess, as the command block of bossmode, with a quiet
+   Copy key. The colors of the tokens come from the hues of the marks and the
+   words of the lights, so they follow the theme. Few colors: keys, strings,
+   numbers, and comments. Everything else stays ink. */
+/* A code block keeps the side margins of the column (auto in the page),
+   so it lines up with the text. site.js puts each block in a .code-block
+   with the Copy key, so the key stays in place when the code scrolls. */
+.doc pre {
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--recess);
+  box-shadow: var(--e-recess);
+  font-size: var(--t-pre);
+  line-height: var(--t-pre-lh);
+  overflow-x: auto;
+  tab-size: 2;
+}
+.doc pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+  white-space: pre;
+}
+.doc pre > span:empty {
+  display: none;
+}
+.doc .code-block,
+.doc .highlight,
+.doc > pre {
+  position: relative;
+  margin-bottom: var(--s-4);
+}
+.doc .code-block > pre {
+  margin-bottom: 0;
+}
+.copy-key {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+}
+.copy-key.key-quiet {
+  background: var(--recess);
+}
+.copy-key.key-quiet:hover {
+  background: var(--raised);
+}
+.code-block:hover .copy-key,
+.highlight:hover .copy-key,
+.copy-key:focus-visible,
+.copy-key[data-done] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .copy-key {
+    opacity: 1;
+  }
+}
+.highlight .hll { background: var(--wash-need); }
+.highlight .c, .highlight .ch, .highlight .cm, .highlight .c1, .highlight .cs, .highlight .cp, .highlight .cpf { color: var(--muted); font-style: italic; }
+.highlight .k, .highlight .kc, .highlight .kd, .highlight .kn, .highlight .kp, .highlight .kr, .highlight .kt { font-weight: 700; }
+.highlight .nt, .highlight .na, .highlight .nv, .highlight .vg, .highlight .vi { color: var(--mark-0); }
+.highlight .s, .highlight .s1, .highlight .s2, .highlight .sb, .highlight .sc, .highlight .sd, .highlight .se, .highlight .sh, .highlight .si, .highlight .sx, .highlight .sr, .highlight .ss, .highlight .dl { color: var(--word-green); }
+.highlight .m, .highlight .mi, .highlight .mf, .highlight .mh, .highlight .mo, .highlight .il, .highlight .mb { color: var(--word-amber); }
+.highlight .nb, .highlight .bp, .highlight .nf, .highlight .fm { color: var(--mark-5); }
+.highlight .err { color: var(--word-red); }
+.highlight .gp { color: var(--muted); user-select: none; }
+.highlight .gd { color: var(--word-red); }
+.highlight .gi { color: var(--word-green); }

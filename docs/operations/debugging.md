@@ -1,42 +1,36 @@
 # Debugging a Task
 
-A Task is one agent in one gVisor sandbox on Agent Substrate, with the kernel `fw` as PID 1. Only the atenet router reaches it, the egress gateway decides what it reaches, and its guest output lands in the log of the worker pod. This page is a set of short procedures: where to look for a run or a Task that misbehaves. Each one names the command, the host that runs it, and what the output means. The limits of the platform are on [Platform gaps and patches](platform-gaps.md).
+A Task is one agent in one sealed sandbox. You cannot open a shell in it by default, a request to it can wake it, and its output lands in a log outside it. This page is a set of short procedures for a run or a Task that misbehaves: where to look, what to type, and what the answer means.
 
-Every `kubectl` and `ax` command below runs on a machine whose `KUBECONFIG` names the cluster. Without it, `ax` dials `localhost:8080` and fails.
+Every `kubectl`, `kubectl-ate`, and `ax` command below runs on a machine whose `KUBECONFIG` names the cluster. Without it, `ax` dials `localhost:8080` and fails.
 
 ## Read the run
 
-### Through the front
+Start with the run, not the Task. Three ways reach it, from the cheapest to the most direct.
 
-The front, fw-workbench, serves a view of every run of the fleet. From Claude Code, call `run_result` with the run id for what the run produced and what it needs next. Call `run_events` with `from` or `before` for one page of the ledger, and with `compact` for a cheap poll ([MCP tools](../reference/mcp-tools.md)). Over HTTP, read `GET /v1/runs/{id}` for the run object and `GET /v1/runs/{id}/events` for the ledger. For a run of another member, the front forwards the request to the Task that owns it, with the credential of the caller. The owner records the real decider ([Workbench architecture, 4.5](../design/workbench-architecture.md#45-acting-on-a-run-of-another-member)).
+Through the front, the workbench in front of the workers. In bossmode, open the conversation or the bridge: every step of the run is there. From Claude Code, call `run_result` with the run id for what the run produced and what it needs next. Call `run_events` for one page of its ledger. Over HTTP, read `GET /v1/runs/{id}` and `GET /v1/runs/{id}/events` on the front. A read of a run object wakes no Task, because the front answers it from its view. A run of a Task that a pool replaced comes from the archive of the front, with `archived: true`.
 
-```sh
-curl -sS -H "Authorization: Bearer $TOKEN" -H 'Accept: application/json' \
-     https://fleet.example.com/v1/runs/$RUN/events
-```
-
-`TOKEN` is the static token of the fleet, or the access token of a person. Never paste it into a chat or a ticket.
-
-### Through the router
-
-Without a front, read the Task itself through the atenet router. `fw ax events --name <task> <run-id>` reads `GET /v1/runs/{id}/events` through the router, a page of 1,000 events at a time, and prints the lines of `fw events`. It dials `--router`, so forward the port first. `fw ax status --name <task>` prints the phase and the conditions of the Task, and `GET /v1/status` of the kernel while the Task runs ([Kernel architecture, 21.3](../design/kernel-architecture.md#213-up-status-events-and-down)).
+Through the router, without a front. `fw ax events` reads the ledger of a run through the router, 1,000 events at a time. Forward the port of the router first. A request through the router wakes a sleeping Task.
 
 ```sh
-kubectl -n ate-system port-forward svc/atenet-router 8001:80
-fw ax events --name fw-fleet-reviewer --router 127.0.0.1:8001 <run-id>
+kubectl -n ate-system port-forward svc/atenet-router 8001:80 &
+fw ax events --name reviewer --router 127.0.0.1:8001 <run-id>
 ```
 
-A request through the router wakes a Task that sleeps. A read of a sleeping Task is therefore never free.
-
-### Inside the Task
-
-With `spec.debug: true` on the Task, `ax ssh <task> -- fw events <run-id>` prints the ledger from `/workspace/.fw` without a flag. The `fw` binary is on the PATH of both images, and `fw events` finds the ledger of the Task on its own. See [ax ssh and spec.debug](#ax-ssh-and-specdebug) for the warning.
+Inside the Task. With `spec.debug: true` on the Task, `ax ssh <task> -- fw events <run-id>` prints the ledger from `/workspace/.fw`. See the warning in [One Task on AX](../deployment/one-task-on-ax.md#look-inside-a-task).
 
 ## Read the Task
 
-### The fw log
+`GET /v1/status` gives the state of the kernel at a glance: the usage, the oldest pending approval, the counts of runs, `idle`, and `idleSince`. After a storage failure, it adds `blocked` and `blockedReason`. Read it through the router. The read wakes a sleeping Task.
 
-The guest stdout of every Task is in the log of the AX worker Deployment: the `fw` log lines and the crash lines. Each line is JSON with the label `ate.actor.name`. The atelet log holds only RPCs. Those carry the environment of the Task, tokens included, so never print the log without a filter. This filter keeps the `fw` lines of one Task and drops the labels:
+```sh
+curl -sS -H 'ate-target-actor: default/reviewer' -H "Authorization: Bearer $FW_API_TOKEN" \
+     http://127.0.0.1:8001/v1/status
+```
+
+The platform knows the rest. `ax -a default describe task <task>` prints the phase, the conditions, and the reason of a failure. `kubectl-ate get actors <task> -a default` prints the state of the actor, such as `ACTOR_STATE_RUNNING`, `ACTOR_STATE_SUSPENDED`, or `ACTOR_STATE_CRASHED`. `kubectl-ate logs actors <task> -a default` streams the log of the actor.
+
+The output of `fw` also lands in the log of the Substrate worker pool that hosts the Task. Such a pool belongs to Substrate and is not a pool of Featherweight. Its Deployment has the name of the pool, such as `deploy/ax` in the namespace `ax-workers`. Each line is JSON with the label `ate.actor.name`. That log also holds the environment of each Task, tokens included, so never print it without a filter. This filter keeps the lines of `fw` for one Task:
 
 ```sh
 kubectl -n ax-workers logs deploy/ax --since=1h | python3 -I -c '
@@ -52,152 +46,86 @@ for line in sys.stdin:
     if "msg" in d and "level" in d:
         d.pop("labels", None)
         print(json.dumps(d))
-' fw-fleet-reviewer
+' reviewer
 ```
 
-The lines `fw: ax boot: ready`, `the environment is ready`, and the warning of the tool user come from here. The actor lines `Actor checkpointing`, `Actor checkpointed`, `Actor restoring`, and `Actor restored` give the suspend and resume times.
-
-### GET /v1/status
-
-`GET /v1/status` on the listener of the kernel gives the state of the agent at a glance. The body holds the usage, the oldest pending approval, the counts of runs, `idle`, and `idleSince`. After a storage failure, it also gives `blocked` and `blockedReason` ([Kernel architecture, 11.8](../design/kernel-architecture.md#118-status-for-the-control-plane)). The front reads it through the router before it suspends a Task. Read it the same way:
-
-```sh
-curl -sS -H 'ate-target-actor: default/fw-fleet-reviewer' -H "Authorization: Bearer $TOKEN" \
-     http://127.0.0.1:8001/v1/status
-```
-
-### ax describe task and the actor
-
-`ax -a default describe task <task>` prints the phase, the conditions, and the reason of a failure. `kubectl-ate logs actors <task> -a default` prints the `fw` log and the gVisor log of the actor. `kubectl-ate get actors <task> -a default` prints the state of the actor: `ACTOR_STATE_RUNNING`, `ACTOR_STATE_SUSPENDED`, or `ACTOR_STATE_CRASHED`.
-
-## The network
-
-### Egress denied
-
-The egress gateway denies every connection that the egress policy of the actor does not allow. It answers an HTTP request with 403 and the body `egress denied`. If a model call or an MCP call fails with 403, read the reason:
-
-```sh
-kubectl -n ate-system logs deploy/atenet-egress --all-containers | grep denied
-```
-
-Then compare the policy with the endpoint. `kubectl-ate get egress-policy <task> -a default -o json` prints the policy. `fw ax render` derives one rule for each endpoint of the configuration, so a Task from `fw ax up` misses none. A rule names a DNS name, never an IP address. The gateway carries only HTTP and TLS, so a `nats://` URL needs the WebSocket listener instead.
-
-### The model server answers 401 or 403
-
-A 401 from the model server means that the Secret behind the proxy or the egress rule holds the wrong key. Rewrite that Secret, and prove the key with one request before the next run. A 403 is the egress gateway, not the model server. See the procedure above.
-
-### A Task boots before its policy lands
-
-A Task boots before its egress policy takes effect, so the first model call of a Task is refused or reset. The OpenAI driver retries a refused or reset connection five times, about fifteen seconds with the default backoff. The log line `openai: retrying the request` names each try ([Kernel architecture, 6.6](../design/kernel-architecture.md#66-openai-adapter-settings)). A Task that cannot reach NATS at its start stops, and the actor crashes. `fw ax up` resumes a crashed actor up to three times. The golden boot of the actor template has no egress policy at all, so it fails every time. The actor then boots without the golden snapshot.
+Look for `fw: ax boot: ready` at the end of a boot, and `the environment is ready` after the packages of a pool install. The actor lines `Actor checkpointing` and `Actor restored` give the times of a suspend and a resume.
 
 ## A Task does not get ready
 
 Work through these steps in order:
 
-1. Read `ax -a default describe task <task>`. A reason `EgressPolicyFailed` means that Substrate refused the policy. A phase `Pending` means that the ax server waits for Substrate.
-2. Read the state of the actor with `kubectl-ate get actors <task> -a default`. If the state is `ACTOR_STATE_CRASHED`, run `ax -a default resume task <task>` once.
-3. Read the `fw` log of the Task with the filter above. A boot that stops at `AX_TASK_YAML` names a key that the kernel does not know.
+1. Read `ax -a default describe task <task>`. The reason `EgressPolicyFailed` means that Substrate refused the egress policy. The phase `Pending` means that AX waits for Substrate.
+2. Read the state of the actor with `kubectl-ate get actors <task> -a default`. If it is `ACTOR_STATE_CRASHED`, run `ax -a default resume task <task>` once.
+3. Read the log of `fw` with the filter above. A boot that stops at `AX_TASK_YAML` names a key that the kernel does not know.
 4. Make sure that the image has a digest. Substrate pulls an actor image by digest only.
-5. Make sure that the registry of the image answers from the node: `curl -fsS http://<registry>/v2/`.
-6. If the Task runs a goal or a clone, `ax ssh` with `spec.debug` reaches the sandbox before the workspaces are ready.
-7. If the log holds the warning `another fw process holds the writer lock of the ledger`, read the section below.
+5. If the Task runs a goal or a clone, `ax ssh` with `spec.debug` reaches the sandbox before the workspaces are ready.
 
-## The ledger lock at boot
+If the log says `fw: serve: another fw process holds the writer lock of the ledger; waiting for it`, another `fw` holds the ledger, such as a `fw run` that a person started through `ax ssh`. The boot waits up to 30 seconds and then stops with the message `another fw process still holds the writer lock of the ledger after 30s`. Stop the other process and resume the Task. `fw run` beside a running server fails at once with `fw: file ledger: another writer owns this root`.
 
-`fw` takes the writer lock of its file ledger at each boot. Another `fw` process can hold the lock, for example a `fw run` that a person started through `ax ssh` during a slow boot with `spec.debug`. The boot then tries again for up to 30 seconds and logs this warning every five seconds:
+If the log says `storage failure; execution blocked until restart`, the storage of the Task failed, such as a full `/workspace`. The kernel writes nothing and runs nothing, and `/readyz` answers 503. Its open runs keep their last state, so the front shows them as running. The front reads the status, sees `blocked`, and suspends the Task. The tool `fleet` then says `blocked by a storage failure`, and the gauge `fw_fleet_members_blocked` counts the member. Repair the storage before the next request: the next request starts a fresh process, which rebuilds from the ledger.
 
-```text
-fw: serve: another fw process holds the writer lock of the ledger; waiting for it
+## The network
+
+A Task reaches only the hosts of its egress. The egress gateway answers any other HTTP request with 403 and the body `egress denied`. If a model call or an MCP call fails with 403, read the reason and the policy:
+
+```sh
+kubectl -n ate-system logs deploy/atenet-egress --all-containers | grep denied
+kubectl-ate get egress-policy <task> -a default -o json
 ```
 
-After 30 seconds, the boot fails with this error, followed by the error of the ledger with its root:
+Then compare the policy with the endpoint. A host is a DNS name, never an IP address. The gateway carries only HTTP and TLS, so a worker reaches NATS at a `ws://` URL. `fw ax render` derives one host for each endpoint of the configuration, and the front warns about each address of a pool that no host allows. Inside the Task, the doctor line `ax reach` names each endpoint that does not answer.
 
-```text
-cli: another fw process still holds the writer lock of the ledger after 30s, so this server cannot own the ledger; stop that process, such as fw run started through ax ssh, then start the server again
-```
+A 401 from the model means that the proxy holds the wrong key, not the gateway. Rewrite the Secret behind the proxy, and prove the key with one request before the next run.
 
-Stop the other process. If `fw` exited after the wait, read the phase of the Task with `ax describe task <task>` and start it again the way its phase allows. The message names an example of a holder and the ledger root, not the process that holds the lock. `fw run` and `fw replay` beside a running server fail at once with `fw: file ledger: another writer owns this root`.
+A Task can boot before its egress policy takes effect, so its first model call can be refused or reset. The OpenAI driver tries a refused connection again five times, about fifteen seconds, and the log line `openai: retrying the request` names each try. A Task that cannot reach NATS at its start stops, and `fw ax up` resumes it up to three times.
 
-## A Task blocked by a storage failure
+## A run that waits, a job that failed
 
-A storage failure, such as a full `/workspace`, fail-stops the kernel of a Task. The process writes nothing and runs nothing until it restarts, and its open runs keep their last recorded state. The view of the front therefore shows those runs as running. Look in three places:
+A run in `input-required` waits for a person, and `pending` of the run object says for what:
 
-- `GET /v1/status` of the Task, read as above. A blocked Task answers `blocked: true`, the cause in `blockedReason`, and `idle: true` with `idleSince` at the time of the failure.
-- The `fw` log of the Task, with the filter above. It holds one Error line, `storage failure; execution blocked until restart`, with the cause.
-- The gauge `fw_storage_blocked` of the Task, which is 1, and the alert `FwStorageBlocked` of `examples/observability`, which fires after one minute.
-
-The suspend controller of the front reads the status of a Task whose runs the view shows as working without events for the grace period. If the body says `blocked`, the front suspends the Task at once and marks the member with the reason. The member line of the MCP tool `fleet` then says `blocked by a storage failure`. The gauge `fw_fleet_members_blocked` of the front counts the member, and the example alert `FwFleetMemberBlocked` fires. The next request restores a fresh process, which rebuilds from the ledger and resumes the open runs ([The ledger](../concepts/ledger.md#fail-stop-on-a-storage-failure)).
-
-Repair the storage before the next request. If the storage is still full, the fresh process can block again, and the controller suspends it again after the grace period. A Task that the controller suspended wakes on the next request through the router, like any sleeping Task ([Workbench architecture, 4.12](../design/workbench-architecture.md#412-the-suspend-controller)).
-
-## A run stuck in input-required
-
-A run in `input-required` waits for a person. The run object names what it waits for in `pending`:
-
-| What waits | How to read it | How to answer |
+| What waits | Where to read it | How to answer |
 |---|---|---|
-| An approval | `pending.tool` and `pending.input` in `GET /v1/runs/{id}`, or `run_result` | `approve` with `allow` or `deny`, or `POST /v1/runs/{id}/approvals/{approval}` |
-| A question of `ask_user` | `run_result` | `send` with the answer |
-| A connect request | `pending.connect` names the service | The person connects the service on the front ([Workbench architecture, 11](../design/workbench-architecture.md#11-connections)) |
+| An approval | `pending.tool` and `pending.input`, or the card Needs your decision in bossmode | The verb of the card, such as Run command, or Deny. Or the tool `approve`, or `POST /v1/runs/{id}/approvals/{approval}`. |
+| A question of `ask_user` | `run_result` | The tool `approve` with the answer in `content` or `note` |
+| A connection | `pending.connect.server` | The person connects the service on the page |
 
-A run that waits is idle, so the suspend controller of the front puts its Task to sleep after `workbench.fleet.suspendAfter`. The decision through the front wakes the Task, and the front then calls `ResumeTask` so that the phase follows ([Workbench architecture, 4.12](../design/workbench-architecture.md#412-the-suspend-controller)). A question of a child in another Task arrives on the parent run, and the answer goes to the child.
+A run that waits is idle, so the front suspends its Task after `workbench.fleet.suspendAfter`. The decision wakes the Task. A question of a child in another Task arrives on the parent run.
 
-## A job in the dead letter
+A worker acknowledges a job once its run is in the ledger. If the run of a job fails after its last attempt, the worker sends a record to `<queue>.dead`, such as `fw.jobs.triage.dead`. The front counts it in `fw_fleet_dead_letters_total`. The tool `batch` with the batch name lists the failed runs with their errors. To run a job again by hand, call `enqueue` with the agent and the input of the job. `bus.intakeRetries` puts a failed job on its queue again, 0 times by default, because each retry spends model tokens again.
 
-A worker takes a job from the intake queue of its profile, `fw.jobs.<agent>` with the intake prefix `fw.jobs`. It acknowledges the job once the run is queued in its ledger. If the run of the job fails after its last attempt, the worker sends a record to `<queue>.dead`. The front counts the record ([Kernel architecture, 9.3](../design/kernel-architecture.md#93-intake)). `bus.intakeRetries` sets how many times the kernel puts a failed job on its queue again as a new run. The default is 0, because each retry spends model tokens again.
+## The tool user
 
-To find such a job, read the batch with the MCP tool `batch`, which lists the failed runs. Or read the records on `fw.jobs.<agent>.dead` with the NATS tools. To run it again by hand, call `enqueue` with the agent and one item that holds the input of the job. An event source with `redrive` runs it again on its own at the next delivery of the event after `redrive.cooldown`. It does so up to `redrive.maxAttempts` times ([Workbench architecture, 13.9](../design/workbench-architecture.md#139-redrive-after-a-dead-letter)). The source `tickets` of `examples/sources/fw.yaml` of the workbench sets three attempts and ten minutes.
-
-## fw doctor inside a Task
-
-`fw doctor` adds four lines inside a Task, through `ax ssh <task> -- fw doctor` or a Task with `spec.debug` ([Kernel architecture, 21.4](../design/kernel-architecture.md#214-the-doctor-in-a-task)). Outside a Task, it prints one line, `ax: not under ax`.
-
-| Line | What it reads | What a failure means |
-|---|---|---|
-| `ax reach` | Probes each endpoint of the configuration through the egress gateway at the same time, five seconds each, without a credential. | An endpoint does not answer, and the line names the fix: the egress of the Task. |
-| `ax trust bundle` | `/run/ate/egress-trust-bundle/trust-bundle.pem`. | The file holds no certificate. An absent file is ok, because nobody in the Task can change it. |
-| `ax tools user` | The user that runs the tools, and whether it is a separate user from the user of `fw`. | `tools.user` names a user that root cannot become in this sandbox. |
-| `ax durable` | `FW_HOME` under `/workspace` and writable, `/workspace` a mount, every binding under it. | A path outside the durable volume, which a suspend loses. |
-
-The source is `cli/doctor_ax.go` of the kernel. The line `tools user` of the plain doctor names the tool user, and the `ax tools user` line adds whether that user is a separate one.
-
-## The tools.user warning
-
-Root inside the gVisor sandbox of Substrate holds only the capabilities `CAP_KILL`, `CAP_NET_BIND_SERVICE`, and `CAP_AUDIT_WRITE`. It cannot chown and cannot setuid ([Kernel architecture, 7.12](../design/kernel-architecture.md#712-tool-processes)). The default tool user of ax, `nonroot`, therefore cannot apply there. The kernel falls back to the user of `fw` with this warning in the log:
+Under AX, the tools of a Task, such as `bash`, run as a separate user, `nonroot`. That needs root in the sandbox to have the capabilities to switch users. Without them, the kernel logs this warning and runs the tools as the user of `fw`:
 
 ```text
 ax: fw runs as root without the capabilities of tools.user, so the processes of tools run as the user of fw and can read its state; give the sandbox these capabilities for tools.user
 ```
 
-The warning is a fact of the platform, not a fault of the Task. An explicit `tools.user` stops the start instead. A Task whose tools need root sets `FW_TOOLS_USER=none`. A shell on such a Task reads `FW_HOME`, so a Task that reads untrusted input gets no shell.
+The warning is a fact of the platform, not a fault of the Task. A patched AX can give every new Task the capabilities, as [Platform gaps and patches](platform-gaps.md#tool-user-capabilities) explains. With them, `fw` opens the root directory of the sandbox for the tool user at each boot, and logs `ax: the root directory kept the tool user out, so fw opened it`. A Task whose tools need root sets `FW_TOOLS_USER=none`. A shell on such a Task can read the state of `fw`, so a Task that reads untrusted input gets no shell.
 
-## ax ssh and spec.debug
+## Where to go next
 
-`ax ssh <task> -- <command>` runs a command in the sandbox through the guest services, which the kernel serves on port 80 only for a Task with `spec.debug: true`. `ax ssh` refuses a Task without it. The services start before the workspaces are ready, so a boot that hangs on a clone or a goal is open to inspection. Since ax commit `92d297e`, `ax ssh` forwards standard input, so a bare `ax ssh <task>` opens a shell in the `fw:toolbox` image ([Kernel architecture, 11.12](../design/kernel-architecture.md#1112-guest-services-and-ax-ssh)).
+<div class="paths" markdown>
 
-!!! warning
-    `spec.debug: true` on a Task that holds keys exposes them. The guest services carry no authentication. Any caller that reaches port 80, a tool process included, can run a process as the user of `fw` and read every `spec.env` entry. Test a sandbox in a throwaway Task with debug on, never on a Task that holds keys.
+- [Platform gaps and patches <span>What AX and Substrate do not do yet, and how the project gets around it</span>](platform-gaps.md)
+- [Observability <span>The metrics and the logs that show a problem before a person does</span>](../deployment/observability.md)
 
-`fw ax render --debug` and `fw ax up --debug` set the field for a Task of your own. A Task does not change, so a Task without the field needs a new Task.
+</div>
 
 ## Sources
 
 - `featherweight-kernel/README.md`
-- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 5.6, 6.6, 7.12, 9.3, 11, and 21)
-- `featherweight-kernel/cli/doctor_ax.go`
-- `featherweight-kernel/cli/doctor.go`
+- `featherweight-kernel/docs/ARCHITECTURE.md`, sections 5.6, 6.6, 7.12, 9.3, 11, and 21
 - `featherweight-kernel/cli/serve.go`
-- `featherweight-kernel/fw/lifecycle.go`
-- `featherweight-kernel/surface/view/status.go`
-- `featherweight-kernel/examples/observability/alerts.yml`
 - `featherweight-kernel/cli/ax.go`
-- `featherweight-kernel/cli/verbs.go`
+- `featherweight-kernel/cli/doctor_ax.go`
 - `featherweight-kernel/ax/config.go`
-- `featherweight-kernel/model/openai/openai.go`
-- `featherweight-kernel/examples/fw.yaml`
-- `featherweight-kernel/surface/native/native.go`
-- `featherweight-workbench/docs/ARCHITECTURE.md` (sections 3.1, 4.5, 4.12, 4.13, 11, and 13.9)
-- `featherweight-workbench/examples/sources/fw.yaml`
+- `featherweight-kernel/fw/ledger.go`
+- `featherweight-kernel/fw/lifecycle.go`
+- `featherweight-kernel/env/install.go`
+- `featherweight-kernel/surface/view/status.go`
+- `featherweight-workbench/docs/ARCHITECTURE.md`, sections 4.5, 4.12, 4.14, 4.18, and 11
 - `featherweight-workbench/fleet/suspend.go`
 - `featherweight-workbench/fleet/metrics.go`
-- `featherweight-workbench/dashboard/fleet.go`
+- `featherweight-lab/e2e/k3s/ax-pool.yaml`

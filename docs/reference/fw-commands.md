@@ -1,22 +1,37 @@
+---
+wide: true
+---
+
 # fw commands
 
-`fw` is the kernel binary: one agent in one process. Each command is one verb. This page lists every verb with its flags, as `cli/cli.go` and the files next to it define them. The design document describes the command line in [section 12.9](../design/kernel-architecture.md#129-the-command-line).
+The kernel binary runs one agent in one process. This page lists every command that it takes, with the flags, grouped by what you want to do. The workbench binary takes the same commands, and [fw-workbench commands](fw-workbench-commands.md) lists what it adds.
 
-The form is `fw [global flags] <verb> [flags] [arguments]`. A flag can come before, between, or after the positional arguments. Everything after `--` is positional. The Go flag package accepts one dash or two, so `-follow` and `--follow` are the same flag.
+The column In says which binary serves a command. `both` means `fw` and `fw-workbench`. A `lean` build of `fw` leaves some commands out, and the table says which.
 
-## How fw finds its configuration
+## The form of a command
 
-Every verb loads the configuration in the same order:
+```sh
+fw [global flags] <command> [flags] [arguments]
+```
 
-1. The file. `-config` names it. Without the flag, `fw` looks in this order: `$FW_CONFIG`, then `./fw.yaml`, then `<home>/fw.yaml`. The first file that exists wins. The home is `-home`, else `$FW_HOME`, else the default home. If `/workspace` is a directory, the default home is `/workspace/.fw`, else `./.fw`. If `$FW_CONFIG` names a missing file, the load reports the missing file instead of another one.
-2. The `FW_*` variables. `bus.url` is `FW_BUS_URL`. The [configuration page](configuration.md) has the mapping rule.
-3. The global flags `-home`, `-listen`, and `-log`.
+A flag can come before, between, or after the arguments. Everything after `--` is an argument. One dash and two dashes are the same, so `-follow` and `--follow` name one flag. `fw help` and `fw <command> -h` print the usage.
 
-The log level comes from `-log`, else `FW_TELEMETRY_LOG`, else `FW_LOG`, else `info`, until the configuration loads and `telemetry.log` applies. Logs are JSON lines on standard error.
+Two cases need no command. Under ax, `fw` with no arguments runs `serve`. A binary started under the name `ax-task-runner` puts `serve` in front of its arguments.
 
-Two cases need no verb. When the process runs under ax, `fw` with no arguments runs `serve`. When the binary is started under the name `ax-task-runner`, `cmd/fw/main.go` puts `serve` in front of the arguments.
+### Global flags
 
-## Exit codes
+Every command takes these flags.
+
+| Flag | What it sets | Default |
+|---|---|---|
+| `-config file` | The configuration file | `$FW_CONFIG`, else `./fw.yaml`, else `<home>/fw.yaml`: the first that exists |
+| `-home dir` | The home directory of `fw`: runs, memory, agents, and skills | `$FW_HOME`. Else, under a `/workspace` directory, `/workspace/.fw`. Else `./.fw` |
+| `-listen address` | The listen address, such as `:8080` | `listen` of the configuration |
+| `-log level` | `debug`, `info`, `warn`, or `error` | `FW_TELEMETRY_LOG`, else `FW_LOG`, else `info`, until `telemetry.log` loads |
+
+The configuration loads in this order: the file, then the `FW_*` variables, then the global flags. If `$FW_CONFIG` names a missing file, the load fails on that file. The [configuration page](configuration.md) explains the variables. Logs are JSON lines on standard error.
+
+### Exit codes
 
 | Code | Meaning |
 |---|---|
@@ -24,335 +39,151 @@ Two cases need no verb. When the process runs under ax, `fw` with no arguments r
 | `1` | An error, a run that failed, or a `doctor` check that failed |
 | `2` | A canceled run, or a bad command line |
 
-## Global flags
+## Set up and check
 
-Every verb accepts these flags.
+| Command | In | What it does | Flags and details |
+|---|---|---|---|
+| `fw init [dir]` | both | Writes a starter `fw.yaml`, `prompts/default.md`, and the directories `agents` and `skills` | No flags. The directory is `.` by default. It never overwrites a file, and it loads the file it wrote to make sure that the starter is valid |
+| `fw doctor` | both | Checks the installation, one line per check | `-timeout limit`: the limit of each check that reaches a provider or a server, default `10s` |
+| `fw config` | both | Prints the resolved configuration as YAML, with every secret masked | No flags |
+| `fw env` | both | Prints every configuration variable, one per line. A variable that is set also shows `=value`, and a secret shows `***` | `-set`: print only the variables that are set |
+| `fw env dockerfile` | `fw` | Prints a Dockerfile that bakes the block `environment` into an image, for `environment.placement: image`. It builds nothing | `-from image`: the base image by digest, required. A `lean` build needs the tag `env` |
+| `fw version` | both | Prints the version, the commit, and the Go version with the platform | No flags. The commit comes from the link flags, else the VCS stamp, else `unknown` |
 
-| Flag | Meaning | Default |
-|---|---|---|
-| `-config file` | The configuration file | `$FW_CONFIG`, `./fw.yaml`, or `$FW_HOME/fw.yaml` |
-| `-log level` | The log level: `debug`, `info`, `warn`, or `error` | `info` |
-| `-home dir` | The fw home directory | `$FW_HOME`, `/workspace/.fw`, or `./.fw` |
-| `-listen address` | The listen address, for example `:8080` | `listen` of the configuration |
+### What fw init writes {#fw-init}
 
-## fw run
-
-Runs one input and prints the output. The verb prints one line per event to standard error and the output to standard output. When a tool needs an approval and standard input is a terminal, the verb asks `allow? [y/N]`. Otherwise it denies the approval.
-
-```sh
-fw run [flags] "<input>"
-```
-
-The words of the input are joined with spaces. An input of `-` reads standard input. The profile flags build an inline profile for this run only. `-tools` and `-skills` take comma-separated globs, and the word `none` allows nothing. A value of `@path` for `-system` or `-i` reads the file at that path.
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-agent name` | The agent profile | `$FW_AGENT`, else `default` |
-| `-json` | Print the run object as JSON instead of the output | off |
-| `-no-approve` | Deny every approval and question without asking | off |
-| `-system text` | The system prompt, or `@path`. It replaces the prompt of the profile | the profile |
-| `-instructions text`, `-i text` | Text that follows the system prompt, or `@path`. Repeat the flag for more | none |
-| `-tools globs` | Globs over the tool names the run can call, for example `files,git.*` | the profile |
-| `-skills globs` | Globs over the skill names the run can use | the profile |
-| `-model selector` | A model selector such as `anthropic/claude-haiku-5-5`, or a name from `models` | the profile |
-| `-effort effort` | The reasoning effort: `low`, `medium`, `high`, `xhigh`, or `max` | the profile |
-| `-time-zone zone` | The IANA time zone of the run, for example `America/Chicago` | the profile |
-| `-max-turns count` | The most model turns | the budget |
-| `-deadline duration` | The most working time, for example `30m`. Time spent waiting does not count | the budget |
-| `-max-tool-calls count` | The most tool calls in the run | the budget |
-
-If the run stops at a budget limit, the verb names the limit and the flag or key that raises it. The exit code follows the state of the run.
-
-The verb opens the configured ledger as its writer. One process owns a file ledger at a time, so `fw run` beside a running `fw serve` with the same home fails with `fw: file ledger: another writer owns this root`. Give the second process another home with `-home`.
-
-## fw serve
-
-Serves every enabled surface on one listener. Under ax, or with `-task-file` or `-workspace-file`, the verb runs the ax boot sequence of [section 11.3](../design/kernel-architecture.md#113-boot-sequence-under-ax) instead: it listens at once with a boot handler, prepares the workspaces, loads the configuration, resumes unfinished runs, and then swaps in the agent.
-
-```sh
-fw serve [flags]
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-task-file file` | Read the ax Task from this file instead of `AX_TASK_YAML` | none |
-| `-workspace-file file` | Read ax Workspaces from this file instead of `AX_WORKSPACES_YAML`. Repeat the flag for more files | none |
-| `-port port` | Listen on this port on every interface. It wins over `-listen` | none |
-| `-metadata-port port` | Serve the ax metadata endpoints on this loopback port. `0` picks a free port | `8099` |
-
-At boot, the verb takes the writer lock of the file ledger. If another `fw` process holds it, the verb tries again every half second for up to 30 seconds. It logs a warning every five seconds. Then it exits with an error that asks to stop the other process, such as `fw run` started through `ax ssh`. `fw run` and `fw replay` beside a server do not wait.
-
-Under ax the listener is `:80` unless `-listen` or `-port` says otherwise. Under ax, `spec.command` of the Task decides what runs after the boot: nothing serves, `fw run` and `fw serve` run in process, and any other command runs as a supervised child. Without a command, `FW_GOAL` starts one run.
-
-## fw mcp
-
-Serves the MCP server over standard input and output, as the local principal `local:<user>`. The kernel binary does not link the MCP server, so `fw mcp` fails with a message that names `fw-workbench mcp`.
-
-```sh
-fw mcp
-```
-
-The verb has no flags of its own.
-
-## fw init
-
-Writes a starter `fw.yaml`, `prompts/default.md`, and the directories `agents` and `skills` into a directory. It never overwrites a file, and it loads the file it wrote to make sure that the starter is valid.
-
-```sh
-fw init [<dir>]
-```
-
-The verb has no flags of its own. The directory is `.` by default. The starter `fw.yaml` sets no model, because a paid model is never a built-in choice. It shows one commented `model` line for each provider: `anthropic/claude-opus-5-5`, `gemini/gemini-3.8-flash`, and `openai/<model>`. It sets the effort `high`, leaves `tools.memory.scope` empty, and names the built-in tools `bash`, `files`, `http`, `memory`, `recall`, `skill`, `clock`, `ask_user`, `spawn_task`, and `await_task`.
-
-After the paths it wrote, the verb prints this line and the next steps:
+The starter `fw.yaml` sets no model, because a paid model is never a built-in choice. It shows one commented `model` line for each provider: `anthropic/claude-opus-5-5`, `gemini/gemini-3.8-flash`, and `openai/<model>`. It sets the effort `high`, `compaction.at: 262144`, and an empty `tools.memory.scope`. Its list of built-in tools is the default list of `tools.builtin`, with `decide` at the end. After the paths, the command prints this line:
 
 ```
 A model must be set: without model in fw.yaml, FW_MODEL, or the model of a profile, fw refuses every run.
 ```
 
-Set a model before the first run. Remove the `#` of one `model` line in `fw.yaml`, or export `FW_MODEL`.
+Remove the `#` of one `model` line in `fw.yaml`, or export `FW_MODEL`, before the first run.
 
-## fw doctor
+### What fw doctor checks {#fw-doctor}
 
-Checks the installation, one line per check. The checks cover the configuration, the home, the tool user, the time zone, the authentication, TLS, the access rules, and the control plane. They also cover the credential, the model, the tool sources, the token broker, the telemetry, the bus, the ledger, the skills, and the memory. Inside an ax Task, `cli/doctor_ax.go` adds the lines `ax reach`, `ax trust bundle`, `ax tools user`, and `ax durable`. Outside ax, one line says that they do not apply.
+The first checks are the configuration, the home, the tools user, the time, the authentication, TLS, and the access rules. Next come the control plane, the credential, the model, the tool sources, the token broker, the telemetry, and the bus. The checks of linked packages, the ledger, the skills, and the memory come last. The package `environment` adds a line. Inside an ax Task, the lines `ax reach`, `ax trust bundle`, `ax tools user`, and `ax durable` follow. Outside ax, one line says that they do not apply.
 
-```sh
-fw doctor [flags]
-```
+Each line starts with `ok`, `warn`, or `FAIL`. A `FAIL` line sets the exit code to `1`. A `warn` line names a risk of a setup that works. Two examples are a configuration without a model and the memory scope `agent` inside an ax Task. The ledger check writes into `<root>/.doctor`, so it runs beside a server.
 
-| Flag | Meaning | Default |
+### What fw env lists {#fw-env}
+
+After the configuration variables, `fw env` lists the other variables that `fw` reads: `ANTHROPIC_API_KEY`, `FW_AGENT`, `FW_API_TOKEN`, `FW_ATESPACE`, `FW_CONFIG`, `FW_LOG`, `FW_MCP_STATE_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, and `SPIFFE_ENDPOINT_SOCKET`. Then it lists the map and list entries that are set, such as `FW_TOOLS_MCP_GIT_ENDPOINT`.
+
+## Start and watch runs
+
+| Command | In | What it does | Flags and details |
+|---|---|---|---|
+| `fw run "<input>"` | both | Runs one input and prints the output. Events go to standard error, one line each | The flags of the table below. An input of `-` reads standard input |
+| `fw serve` | both | Serves every enabled surface on one listener | The flags of the table below |
+| <span id="fw-events"></span>`fw events <run-id>` | both | Prints the events of a run from the ledger. It opens a file ledger read-only, so it works beside a server and never resumes a run | `-follow`: print new events until the run ends, read every 250 ms. `-from number`: the first sequence number, default `0`. `-format`: `jsonl` (default) or `text` |
+| <span id="fw-replay"></span>`fw replay <run-id>` | both | Runs a recorded run again against a model, with the recorded tool results. It is a regression test for a model change | `-model selector`: the model of the replay. `-ledger dir`: the file ledger that holds the run, opened read-only. `-json`: print the new run as JSON |
+
+### fw run
+
+The words of the input are joined with spaces. If a tool needs an approval and standard input is a terminal, the command asks `allow? [y/N]`. Otherwise it denies the approval. The profile flags build an inline profile for this run only.
+
+| Flag | What it sets | Default |
 |---|---|---|
-| `-timeout limit` | The limit of each check that reaches a provider or a server | `10s` |
+| `-agent name` | The agent profile | `$FW_AGENT`, else `default` |
+| `-json` | Print the run object as JSON instead of the output | off |
+| `-no-approve` | Deny every approval and question without asking | off |
+| `-system text` | The system prompt, or `@path` to read a file. It replaces the prompt of the profile | the profile |
+| `-instructions text`, `-i text` | Text after the system prompt, or `@path`. Repeat the flag for more | none |
+| `-tools globs` | Comma-separated globs over the tool names, such as `files,git.*`. `none` allows nothing | the profile |
+| `-skills globs` | Comma-separated globs over the skill names. `none` allows no skill | the profile |
+| `-model selector` | A selector such as `anthropic/claude-haiku-5-5`, or a name from `models` | the profile |
+| `-effort effort` | `low`, `medium`, `high`, `xhigh`, or `max` | the profile |
+| `-time-zone zone` | The IANA time zone of the run, such as `America/Chicago` | the profile |
+| `-max-turns count` | The most model turns | the budget |
+| `-deadline duration` | The most working time, such as `30m`. Time spent waiting does not count | the budget |
+| `-max-tool-calls count` | The most tool calls of the run | the budget |
 
-Each line starts with `ok`, `warn`, or `FAIL`. A `FAIL` line is a problem, and the exit code is then `1`. A `warn` line names a risk of a setup that works, and the exit code stays `0`. Two checks warn. The first is a configuration without a model, because the process then refuses every run:
+If the run stops at a budget limit, the command names the limit and the flag or key that raises it. The exit code follows the state of the run.
 
-```
-warn  model: none configured, so this process serves and refuses every run until model in fw.yaml, FW_MODEL, or the profile of a run names one; there is no default model
-```
+!!! warning
+    If `fw serve` runs with the same home, `fw run` fails with `fw: file ledger: another writer owns this root`. One process owns a file ledger at a time. Give the second process another home with `-home`.
 
-The memory check is the last check. It names the scope, the index of this build, and the count of the notes of the profile `default`:
+### fw serve
 
-```
-ok    memory: scope agent, index scan, 3 notes of the profile default
-```
+Under ax, or with `-task-file` or `-workspace-file`, the command runs the ax boot sequence. It listens at once with a boot handler, prepares the workspaces, loads the configuration, resumes unfinished runs, and then swaps in the agent. See [section 11.3](../design/kernel-architecture.md#113-boot-sequence-under-ax).
 
-Under the scope `principal`, the line counts the notes of all people together and the notes of the runs without a principal. For example: `4 notes of 2 people in the profile default, and 1 note of its runs without a principal`. Inside an ax Task, an empty `tools.memory.scope` counts as `principal`, as `ax.ApplyToConfig` sets it for `fw serve`. The second warning is the scope `agent` inside an ax Task, because each person then reads the notes of other people:
-
-```
-warn  memory: tools.memory.scope is agent in an ax Task, so each person who runs a profile reads the notes that the runs of other people wrote; set principal unless one person uses the Task
-```
-
-The index is `scan`, or `sqlite-fts5` in a build with the tag `memory_sqlite`. If the store does not open or cannot list its notes, the line reads `FAIL  memory:` with the error. The ledger check writes into `<root>/.doctor`, a directory of its own, so it runs beside a server.
-
-## fw agents
-
-Lists the agent profiles, prints one, or puts and deletes one. The verb acts as the local principal. The kernel writes no profile: `put` and `delete` answer with an error that names `fw-workbench agents`.
-
-```sh
-fw agents [flags] [<name> | put <file.yaml> | delete <name>]
-```
-
-| Flag | Meaning | Default |
+| Flag | What it sets | Default |
 |---|---|---|
-| `-json` | Print the profiles as JSON | off, a table or YAML |
-| `-name name` | `put`: the profile name, in place of the one in the file | the `name` field, else the file name |
+| `-task-file file` | Read the ax Task from this file instead of `AX_TASK_YAML` | none |
+| `-workspace-file file` | Read ax Workspaces from this file instead of `AX_WORKSPACES_YAML`. Repeat the flag for more | none |
+| `-port port` | Listen on this port on every interface. It wins over `-listen` | none |
+| `-metadata-port port` | Serve the ax metadata endpoints on this loopback port. `0` picks a free port | `8099` |
 
-The list shows the name, the description, the model, and the access block of each profile. An access of `-` means that the profile follows `access.default`.
+At boot, the command takes the writer lock of the file ledger. If another `fw` holds it, the command tries again every half second for 30 seconds. Then it exits with an error that asks you to stop the other process. Under ax, the listener is `:80` unless `-listen` or `-port` says otherwise. The command `spec.command` of the Task decides what runs after the boot. Without a command, `FW_GOAL` starts one run.
 
-## fw whoami
+To replay a run of a live server, give `fw replay` another home with `-home`. Name the ledger of the server with `-ledger`.
 
-Prints the local principal: the subject `local:<user>`, the name, the kind `local`, and whether `access.admins` names it. The last line says which commands act as it. `fw mcp` and `fw agents` always act as it. If `access.default` is `closed`, or if a control plane decides, then `fw run`, `fw events`, and `fw replay` act as it too.
+## Agents, tools, and identity
 
-```sh
-fw whoami [flags]
-```
+| Command | In | What it does | Flags and details |
+|---|---|---|---|
+| <span id="fw-agents"></span>`fw agents [name]` | both | Lists the agent profiles, or prints one as YAML. The list shows the name, the description, the model, and the access block. An access of `-` follows `access.default` | `-json`: print JSON |
+| `fw agents put <file.yaml>` | `fw-workbench` | Writes a profile under `<home>/agents`. In `fw`, it fails with a message that names `fw-workbench agents` | `-name name`: the profile name, in place of the one in the file |
+| `fw agents delete <name>` | `fw-workbench` | Removes a profile file. In `fw`, it fails as `put` does | none |
+| `fw whoami` | both | Prints the local principal `local:<user>`, its kind `local`, whether `access.admins` names it, and which commands act as it | `-json`: print JSON |
+| `fw tools` | both | Lists the tools of every source: built-in, MCP servers, and A2A peers, with the flags `readonly`, `idempotent`, `destructive`, `parallel`, and `trusted` | `-json`: print the tool specifications |
+| `fw skills [name]` | both | Lists the skills of the skill directories, or prints the `SKILL.md` of one. It needs no model credential | `-json`: print JSON with the directory and the files of each skill |
+| `fw card` | both | Prints the A2A agent card as JSON | No flags. A `lean` build needs the tag `a2a` |
+| <span id="fw-mcp"></span>`fw mcp` | `fw-workbench` | Serves the MCP server over standard input and output, as `local:<user>`. In `fw`, it fails with a message that names `fw-workbench mcp` | No flags |
 
-| Flag | Meaning | Default |
+`fw mcp` and `fw agents` always act as the local principal. If `access.default` is `closed`, or a control plane decides, then `fw run`, `fw events`, and `fw replay` act as it too. Otherwise they are trusted.
+
+## Routines {#fw-routine}
+
+A routine is a vetted list of tool calls that the kernel can run in place of the model. These commands check a routine against recorded runs, or write one from them. See [section 22.4](../design/kernel-architecture.md#224-replay-and-propose) and the [routines guide](../guide/routines.md).
+
+| Command | In | What it does | Flags and details |
+|---|---|---|---|
+| `fw routine replay` | both | For each recorded run, renders the steps with the answers of the agent and compares each input with the call that the agent made. It prints matched, diverged, handed to the agent, and unreadable runs | `-routine file` (required): the routine, YAML or JSON. `-ledger dir`: a file ledger, opened read-only. `-agent name`: read only the runs of this agent. `-decide`: also ask the questions of the routine on each input and score the answers. `-json`: print JSON |
+| `fw routine propose` | both, not `lean` | Makes a routine from the runs of an agent that completed and that no one sent back | `-agent name` (required). `-ledger dir`. `-runs ids`: only these runs, comma-separated. `-out file`: write the routine to a file, default standard output. `-name name`: default the agent name. `-decider name`: a key of `deciders`. `-json`: print the routine and the proposal |
+
+A `lean` build carries `routine propose` only with the tag `propose`. A proposal that cannot fill every value says `Not complete` in its first lines.
+
+## One Task on AX {#fw-ax}
+
+`fw ax` renders, starts, inspects, and deletes one ax Task for a profile file, without a front. It dials the ax API over gRPC and reaches the kernel through the atenet router. Outside the cluster, forward `svc/ax-server` and `svc/atenet-router` first. See [section 21](../design/kernel-architecture.md#21-fw-ax-and-the-doctor-in-a-task).
+
+| Command | In | What it does |
 |---|---|---|
-| `-json` | Print the principal as JSON | off |
+| `fw ax render -f <file> -name <task> -image <image@sha256:...>` | both | Prints the Workspace and the Task as YAML, in the order of the apply, with `<secret: NAME>` for each secret |
+| `fw ax up -f <file> -name <task> -image <image@sha256:...>` | both | Applies the Workspace and the Task, resumes the Task, and waits for `/readyz` through the router. It sends each secret from `-env` or from its own environment |
+| `fw ax status -name <task>` | both | Prints the Task and `GET /v1/status` of its kernel |
+| `fw ax events -name <task> <run-id>` | both | Prints the ledger of a run through the router |
+| `fw ax down -name <task>` | both | Deletes the Task and its Workspace. It retries a refused delete for one minute |
 
-## fw tools
-
-Lists the tools of every source: the built-in tools, the MCP servers, and the A2A peers of the configuration. The table shows the name, the flags, the source, and the first line of the description. The flags are `readonly`, `idempotent`, `destructive`, `parallel`, and `trusted`.
-
-```sh
-fw tools [flags]
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-json` | Print the tool specifications as JSON | off |
-
-## fw skills
-
-Lists the skills of the configured skill directories, or prints the `SKILL.md` file of one skill. The verb reads the directories without an agent, so it works without a model credential.
-
-```sh
-fw skills [flags] [<name>]
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-json` | Print the skills as JSON, with the directory and the files of each | off |
-
-## fw events
-
-Prints the events of a run from the configured ledger. The verb opens the ledger without a kernel, so it never resumes a run. It opens a file ledger read-only, without the writer lock, so it reads beside a running server (`fw.OpenFileLedgerReadOnly`). A read-only open never repairs or creates a file. Another ledger driver opens as the driver defines.
-
-```sh
-fw events [flags] <run-id>
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-follow` | Keep printing new events until the run finishes | off |
-| `-from number` | The first sequence number to print | `0` |
-| `-format format` | The output format: `jsonl` or `text` | `jsonl` |
-
-With `-follow`, the verb reads the ledger again every 250 milliseconds until the last event is terminal. Without `-follow`, a run with no events exits with `1`.
-
-## fw replay
-
-Replays a recorded run against a model and prints the new run. The replay feeds the recorded tool results to the model, so it is a regression test for a model change. See [section 4.6](../design/kernel-architecture.md#46-replay).
-
-```sh
-fw replay [flags] <run-id>
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-model selector` | The model selector, or a key of `models`, for the replay. It replaces the model of every profile | the configured model |
-| `-ledger dir` | The root directory of the file ledger that holds the run | the configured ledger |
-| `-json` | Print the new run as JSON instead of the output | off |
-
-`-ledger` opens that directory read-only, so the source can be the ledger of a running server. The new run goes to the configured ledger of the replay, which needs its writer lock. To replay a run of a live server, give the replay another home with `-home`, and name the ledger of the server with `-ledger`.
-
-The design document, section 4.6, still writes `fw replay <ledger>`. The code takes a run id, and `-ledger` names another ledger directory, so the code wins.
-
-## fw card
-
-Prints the A2A agent card as JSON.
-
-```sh
-fw card
-```
-
-The verb has no flags of its own. If the binary is a `lean` build without the tag `a2a`, the A2A surface is not linked, and the verb fails.
-
-## fw config
-
-Prints the resolved configuration as YAML, with every secret masked.
-
-```sh
-fw config
-```
-
-The verb has no flags of its own.
-
-## fw env
-
-Prints every configuration variable, one per line. If a variable is set, the line also holds `=` and its value. A secret value prints as `***`. After the configuration variables, the verb lists the other variables that `fw` reads, such as `FW_CONFIG`, `FW_API_TOKEN`, and the provider keys. Then it lists the map and list entries that are set, such as `FW_TOOLS_MCP_GIT_ENDPOINT`.
-
-```sh
-fw env [flags]
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-set` | Print only the variables that are set | off |
-
-### fw env dockerfile
-
-Prints a Dockerfile that bakes the block `environment` of `fw.yaml` into an image, for `environment.placement: image`. It builds nothing. See [section 18.10](../design/kernel-architecture.md#1810-fw-env-dockerfile).
-
-```sh
-fw env dockerfile -from <image>
-```
-
-| Flag | Meaning | Default |
-|---|---|---|
-| `-from image` | The base image, such as `fw:toolbox` by digest (required) | none |
-
-The verb needs the package `env`, which a `lean` build carries only with the tag `env`.
-
-## fw ax
-
-Renders, starts, inspects, and deletes one ax Task for a profile file, without a front. The verbs dial the ax API over gRPC and reach the kernel through the atenet router. Outside the cluster, forward `svc/ax-server` and `svc/atenet-router` first. See [section 21](../design/kernel-architecture.md#21-fw-ax-and-the-doctor-in-a-task).
-
-```sh
-fw ax <render|up|status|events|down> [flags]
-```
-
-Every subverb takes `-name` and `-atespace`. The other flags belong to the subverbs that the table names.
-
-| Flag | Subverbs | Meaning | Default |
+| Flag | Subcommands | What it sets | Default |
 |---|---|---|---|
 | `-name name` | all | The name of the Task (required) | none |
 | `-atespace atespace` | all | The atespace of the Task | `default` |
 | `-f file` | `render`, `up` | The profile file: a fragment of `fw.yaml`, such as `policy`, `access`, and `agents` | none |
-| `-image image` | `render`, `up` | The image of the Task by digest, `name@sha256:...` (required) | none |
-| `-egress destination` | `render`, `up` | Allow one more destination: `host:port` (http), `tls:host:port`, `https:host:port`, or a URL. Repeat the flag for more | none |
-| `-env NAME=VALUE` | `render`, `up` | Set a variable in `spec.env` of the Task. Repeat the flag for more | none |
-| `-workspace-file path=localpath` | `render`, `up` | Ship a local file in the Workspace at `path`. Repeat the flag for more | none |
+| `-image image` | `render`, `up` | The image by digest, `name@sha256:...` (required) | none |
+| `-egress destination` | `render`, `up` | One more destination, as `spec.egress.hosts` takes it: a host for TLS on port 443, `http://host[:port]`, `https://host[:port]`, or a `ws`, `wss`, or `rediss` URL. Repeat for more | none |
+| `-env NAME=VALUE` | `render`, `up` | A variable in `spec.env`. Repeat for more | none |
+| `-workspace-file path=localpath` | `render`, `up` | Ship a local file in the Workspace at `path`. Repeat for more | none |
 | `-debug` | `render`, `up` | Set `spec.debug`, which turns on the guest services of `ax ssh`. They carry no authentication | off |
 | `-server address` | `up`, `status`, `down` | The ax API address | `$AX_SERVER`, else `ax.server` |
 | `-router address` | `up`, `status`, `events` | The atenet router address | `ax.router` |
-| `-timeout duration` | `up` | How long to wait until `/readyz` answers | `10m` |
-| `-format format` | `events` | The output format: `jsonl` or `text` | `jsonl` |
+| `-timeout duration` | `up` | How long to wait for `/readyz` | `10m` |
+| `-format format` | `events` | `jsonl` or `text` | `jsonl` |
 
-### fw ax render
+## Commands that do not exist
 
-Prints the Workspace and the Task as YAML, in the order of the apply, with a placeholder `<secret: NAME>` for each secret. The image must carry a digest.
+There is no `fw fork`. A branch of a run comes from `POST /v1/runs/{id}/fork` on the [HTTP API](http-api.md), or from the MCP tool `fork`.
 
-```sh
-fw ax render -f <profile file> -name <task> -image <image@sha256:...>
-```
+The design document, section 4.6, writes `fw replay <ledger>`. The code takes a run id, and `-ledger` names the ledger directory, so the code wins.
 
-### fw ax up
+<div class="paths" markdown>
 
-Applies the Workspace and the Task, resumes the Task, and waits for `/readyz` through the router. It sends the value of each secret from `-env` or from its own environment.
+- [fw-workbench commands <span>The commands that the workbench adds</span>](fw-workbench-commands.md)
+- [Configuration <span>Every key of fw.yaml</span>](configuration.md)
 
-```sh
-fw ax up -f <profile file> -name <task> -image <image@sha256:...>
-```
-
-### fw ax status
-
-Prints the Task and `GET /v1/status` of its kernel.
-
-```sh
-fw ax status -name <task>
-```
-
-### fw ax events
-
-Prints the ledger of a run through the router.
-
-```sh
-fw ax events -name <task> <run-id>
-```
-
-### fw ax down
-
-Deletes the Task and its Workspace. It tries a delete that Substrate refuses for one minute.
-
-```sh
-fw ax down -name <task>
-```
-
-## fw version
-
-Prints the version, the commit, and the Go version with the platform.
-
-```sh
-fw version
-```
-
-The verb has no flags of its own. The commit comes from the link flags, else from the VCS revision that the Go toolchain stamped, else `unknown`.
-
-## Verbs that do not exist
-
-There is no `fw fork` verb. A branch of a run comes from `POST /v1/runs/{id}/fork` on the [HTTP API](http-api.md) or from the MCP tool `fork` of the workbench.
+</div>
 
 ## Sources
 
@@ -360,22 +191,18 @@ There is no `fw fork` verb. A branch of a run comes from `POST /v1/runs/{id}/for
 - `featherweight-kernel/cli/verbs.go`
 - `featherweight-kernel/cli/run.go`
 - `featherweight-kernel/cli/serve.go`
-- `featherweight-kernel/cli/ax.go`
+- `featherweight-kernel/cli/setup.go`
 - `featherweight-kernel/cli/env.go`
 - `featherweight-kernel/cli/identity.go`
-- `featherweight-kernel/cli/setup.go`
 - `featherweight-kernel/cli/doctor.go`
 - `featherweight-kernel/cli/doctor_ax.go`
+- `featherweight-kernel/cli/routine.go`
+- `featherweight-kernel/cli/routine_propose.go`
+- `featherweight-kernel/cli/ax.go`
 - `featherweight-kernel/cmd/fw/main.go`
 - `featherweight-kernel/cmd/fw/drivers.go`
-- `featherweight-kernel/cmd/fw/driver_env.go`
 - `featherweight-kernel/cmd/fw/driver_a2a.go`
-- `featherweight-kernel/config/config.go`
-- `featherweight-kernel/fw/agent.go`
-- `featherweight-kernel/fw/ledger_file.go`
-- `featherweight-kernel/memory/index_scan.go`
-- `featherweight-kernel/memory/index_fts.go`
-- `featherweight-kernel/ax/config.go`
-- `featherweight-kernel/surface/axmeta/axmeta.go`
-- `featherweight-kernel/README.md`
-- `featherweight-kernel/docs/ARCHITECTURE.md` (section 12.9)
+- `featherweight-kernel/cmd/fw/driver_env.go`
+- `featherweight-kernel/Makefile`
+- `featherweight-kernel/fw/config.go`
+- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 4.6, 11.3, 12.9, 21, 22)

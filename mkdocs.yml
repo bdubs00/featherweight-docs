@@ -1,40 +1,36 @@
 site_name: Featherweight
-site_description: Durable agents on Google AX and Agent Substrate. The kernel and the workbench.
+site_description: Agents that run in sandboxes on Google AX, write every step to a ledger, sleep while they wait for you, and wake where they stopped.
 site_url: https://bdubs00.github.io/featherweight-docs/
 repo_url: https://github.com/bdubs00/featherweight-kernel
 repo_name: bdubs00/featherweight-kernel
 edit_uri: ""
 docs_dir: docs
 strict: false
+exclude_docs: |
+  assets/demos/README.md
 
+# The theme of the site is its own, after the design language of bossmode.
+# DESIGN.md is the plan of the look, and theme/ holds the templates.
 theme:
-  name: material
-  features:
-    - navigation.tabs
-    - navigation.sections
-    - navigation.expand
-    - navigation.top
-    - navigation.footer
-    - search.suggest
-    - search.highlight
-    - content.code.copy
-    - content.tabs.link
-    - toc.follow
-  palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: teal
-      accent: amber
-      toggle:
-        icon: material/weather-night
-        name: Dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: teal
-      accent: amber
-      toggle:
-        icon: material/weather-sunny
-        name: Light mode
+  name: null
+  custom_dir: theme
+  search_index_only: true
+  static_templates:
+    - 404.html
+
+hooks:
+  - hooks/site.py
+
+extra:
+  # The glyph of each place of the app bar, by the title of its section.
+  places:
+    Start: start
+    Guide: guide
+    Concepts: concepts
+    Deploy: deploy
+    Operate: operate
+    Reference: reference
+    Design: design
 
 markdown_extensions:
   - admonition
@@ -42,7 +38,8 @@ markdown_extensions:
   - md_in_html
   - tables
   - toc:
-      permalink: true
+      permalink: "#"
+      permalink_title: Link to this section
   - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
@@ -50,11 +47,7 @@ markdown_extensions:
   - pymdownx.snippets
   - pymdownx.tabbed:
       alternate_style: true
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.superfences
 
 plugins:
   - search
@@ -66,7 +59,21 @@ validation:
   anchors: warn
 
 nav:
-  - Home: index.md
+  - Start:
+      - Featherweight: index.md
+      - Run the kernel on your machine: getting-started/kernel-local.md
+      - Run the workbench on your machine: getting-started/workbench-local.md
+      - Use a fleet from Claude Code: getting-started/from-claude-code.md
+  - Guide:
+      - Bossmode at a glance: guide/index.md
+      - Chat with an agent: guide/chat.md
+      - Decisions and activity: guide/decisions.md
+      - Bridges and seats: guide/bridges.md
+      - The manager: guide/manager.md
+      - Duties: guide/duties.md
+      - Skills, tools, and packages: guide/skills.md
+      - The wiki: guide/wiki.md
+      - Routines: guide/routines.md
   - Concepts:
       - The four layers: concepts/layers.md
       - The run lifecycle: concepts/run-lifecycle.md
@@ -76,29 +83,31 @@ nav:
       - Context, memory, and time: concepts/context-memory-time.md
       - Identity: concepts/identity.md
       - The fleet: concepts/fleet.md
-  - Getting started:
-      - Run the kernel on your machine: getting-started/kernel-local.md
-      - Run the workbench on your machine: getting-started/workbench-local.md
-      - Use a fleet from Claude Code: getting-started/from-claude-code.md
+      - Environments and agent programs: concepts/environments.md
+      - Outcomes and check runs: concepts/outcomes.md
+  - Deploy:
+      - Build and images: deployment/images.md
+      - One Task on AX: deployment/one-task-on-ax.md
+      - A fleet: deployment/fleet.md
+      - Pools and templates: deployment/pools.md
+      - Serve bossmode: deployment/bossmode.md
+      - Observability: deployment/observability.md
+  - Operate:
+      - Debugging a Task: operations/debugging.md
+      - Platform gaps and patches: operations/platform-gaps.md
   - Reference:
       - fw commands: reference/fw-commands.md
       - fw-workbench commands: reference/fw-workbench-commands.md
       - Configuration: reference/configuration.md
+      - Workbench configuration: reference/workbench-configuration.md
       - HTTP API: reference/http-api.md
+      - Workbench routes: reference/workbench-routes.md
       - MCP tools: reference/mcp-tools.md
-  - Deployment:
-      - Build and images: deployment/images.md
-      - One Task on AX: deployment/one-task-on-ax.md
-      - A fleet: deployment/fleet.md
-      - Observability: deployment/observability.md
-  - Operations:
-      - Debugging a Task: operations/debugging.md
-      - Platform gaps and patches: operations/platform-gaps.md
-  - Design documents:
+      - Glossary: glossary.md
+  - Design:
       - About these documents: design/index.md
       - Kernel architecture: design/kernel-architecture.md
       - Kernel map: design/kernel-map.md
       - Kernel roadmap: design/kernel-roadmap.md
       - Workbench architecture: design/workbench-architecture.md
       - Product direction: design/product-direction.md
-  - Glossary: glossary.md

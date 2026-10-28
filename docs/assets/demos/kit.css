@@ -1,0 +1,360 @@
+/* The frame of a demo, the ledger, and the rows of workers. The primitives
+   (the light, the keys, the chips, the marks) are in the site styles,
+   theme/assets/css/site.css. DESIGN.md, section 5, names the rules. */
+
+/* Before the kit mounts a demo, its element holds the plain fallback. */
+.doc > .demo {
+  margin-top: var(--s-6);
+  margin-bottom: var(--s-6);
+}
+.demo:not(.is-live) {
+  padding: var(--s-4);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+}
+.demo:not(.is-live) > :last-child {
+  margin-bottom: 0;
+}
+
+/* The card: the only hard black edge on a page. */
+.demo-card {
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  background: var(--card);
+  box-shadow: var(--e-card);
+  overflow: hidden;
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+}
+/* A card that is decided: a line edge, as a decided card of bossmode. */
+.demo-card.decided {
+  border-color: var(--line);
+  box-shadow: none;
+}
+.demo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) var(--s-4) 0;
+}
+.doc .demo-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font-size: var(--t-heading);
+  line-height: var(--t-heading-lh);
+  font-weight: 800;
+  font-stretch: 106%;
+  letter-spacing: -0.015em;
+}
+.demo-head .status {
+  margin-left: auto;
+}
+.demo-stage {
+  padding: var(--s-3) var(--s-4);
+  /* The stage is a container, so a layout in it follows the width of the
+     card, not of the window: a card is narrow on a medium window too. */
+  container-type: inline-size;
+}
+.doc .demo-say {
+  min-height: calc(var(--t-body-lh) * 2);
+  margin: 0;
+  padding: 0 var(--s-4);
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+}
+.demo-say:empty {
+  min-height: 0;
+}
+.demo-say code {
+  font-size: 0.86em;
+}
+.demo-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  /* Keys that wrap to a second line stay at the end, under the others. */
+  justify-content: flex-end;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+}
+.demo-keys-gap {
+  flex: 1 1 auto;
+}
+.doc .demo-caption {
+  margin: var(--s-2) 2px 0;
+  font-size: var(--t-meta);
+  line-height: var(--t-meta-lh);
+  color: var(--muted);
+}
+
+/* A two-column stage that stacks on a narrow card. */
+.demo-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: var(--s-4);
+  align-items: start;
+}
+@container (max-width: 520px) {
+  .demo-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.demo-label {
+  display: block;
+  margin-bottom: var(--s-1);
+  font-size: var(--t-meta);
+  line-height: var(--t-meta-lh);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* A column of parts in a stage: a label and its rows, a note, a ledger. */
+.demo-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+/* A muted line of small text: a rule, a note under a part, a scale. */
+.doc .demo-note {
+  margin: 0;
+  font-size: var(--t-meta);
+  line-height: var(--t-meta-lh);
+  color: var(--muted);
+}
+.doc .demo-note code,
+.doc .demo-label code {
+  font-size: var(--t-caption);
+}
+
+/* A list of choices or states, one row each, the current one raised. */
+.doc .demo-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.demo-rows > li {
+  display: flex;
+  margin: 0;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  font-size: var(--t-control);
+}
+.demo-rows > li.on {
+  background: var(--raised);
+  border-color: var(--raised-line);
+  box-shadow: var(--e-row);
+  font-weight: 700;
+}
+.demo-rows > li.dim {
+  color: var(--muted);
+}
+.demo-rows .demo-row-note {
+  margin-left: auto;
+  font-size: var(--t-meta);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* The ledger: a recess of numbered event lines. */
+.ledger {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px;
+}
+.ledger-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px var(--s-2);
+  padding: 2px 6px 6px;
+  font-size: var(--t-meta);
+  line-height: var(--t-meta-lh);
+  font-weight: 600;
+  color: var(--muted);
+}
+.doc .ledger-title code {
+  min-width: 0;
+  padding: 0;
+  background: none;
+  font-size: var(--t-caption);
+  overflow-wrap: anywhere;
+}
+.ledger-empty {
+  margin: 0 !important;
+  padding: 10px 6px;
+  font-size: var(--t-meta) !important;
+  line-height: var(--t-meta-lh) !important;
+  color: var(--muted);
+}
+.doc .ledger-lines {
+  max-height: 264px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.doc .ledger-lines > li {
+  margin: 0;
+}
+.ledger-line {
+  appearance: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 5px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: var(--t-code-lh);
+  text-align: left;
+}
+button.ledger-line {
+  cursor: pointer;
+}
+button.ledger-line:hover {
+  background: var(--raised);
+}
+.ledger-lines > li.picked .ledger-line {
+  background: var(--raised);
+  border-color: var(--raised-line);
+}
+.ledger-lines > li.after .ledger-line {
+  opacity: 0.4;
+}
+.ledger-seq {
+  flex: none;
+  min-width: 18px;
+  text-align: right;
+  color: var(--muted);
+}
+.ledger-line > .led {
+  margin-top: 4px;
+}
+.ledger-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ledger-type {
+  font-weight: 600;
+}
+.ledger-detail {
+  color: var(--muted);
+}
+
+/* Rows of workers: a lamp, a name, and the word of the state. */
+.doc .workers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: var(--r);
+  background: var(--recess);
+  box-shadow: var(--e-recess);
+}
+.doc .worker {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 30px;
+  margin: 0;
+  padding: 2px 6px;
+  font-size: var(--t-control);
+}
+.worker-name {
+  flex: none;
+  font-weight: 600;
+}
+.worker-word {
+  min-width: 0;
+  margin-left: auto;
+  font-size: var(--t-meta);
+  line-height: var(--t-meta-lh);
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+}
+.worker-word.tone-green {
+  color: var(--word-green);
+}
+.worker-word.tone-amber {
+  color: var(--word-amber);
+}
+.worker-word.tone-red {
+  color: var(--word-red);
+}
+.lamp {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-led);
+  background: var(--led-grey);
+  box-shadow: var(--led-ring);
+}
+.lamp-working {
+  background: var(--led-green);
+  box-shadow: 0 0 5px var(--led-green), var(--led-ring);
+}
+.lamp-failed {
+  background: var(--led-red);
+  box-shadow: 0 0 5px var(--led-red), var(--led-ring);
+}
+.lamp-needs {
+  background: var(--led-amber);
+  box-shadow: 0 0 5px var(--led-amber), var(--led-ring);
+}
+.lamp-awake {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--led-green);
+}
+.lamp-starting {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--led-grey);
+}
+
+/* A command, as the command block of a decision card. */
+.doc .demo-command {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: var(--t-code);
+  line-height: var(--t-code-lh);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A step counter for a demo that walks through steps. */
+.doc .demo-steps {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.demo-steps > li {
+  flex: 1 1 0;
+  height: 4px;
+  margin: 0;
+  border-radius: 2px;
+  background: var(--line);
+}
+.demo-steps > li.done {
+  background: var(--ink);
+}

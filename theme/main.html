@@ -1,0 +1,197 @@
+{#- The shell of the site: the app bar of places, the list pane, the page, and
+    the details pane, after the shell of bossmode. DESIGN.md, section 4.3,
+    names the columns and the three widths. -#}
+{%- import "partials/glyphs.html" as g with context -%}
+{%- set place = namespace(item=none, index=0, here=true) -%}
+{%- for item in nav -%}{%- if item.active and place.item is none -%}{%- set place.item = item -%}{%- endif -%}{%- endfor -%}
+{#- A page outside the nav (the 404 page) lists the first place, without marking it as the current place. -#}
+{%- if place.item is none -%}{%- set place.item = (nav|list|first) or none -%}{%- set place.here = false -%}{%- endif -%}
+{%- set title = page.meta.h1 if page and page.meta and page.meta.h1 else (page.title if page and page.title else config.site_name) -%}
+{#- A page without headings or sources (the 404 page) has no details pane. -#}
+{%- set has_details = page and ((page.toc and (page.toc|first)) or (page.meta and page.meta.sources_html)) -%}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page and page.file and page.file.src_uri == 'index.md' %}{{ config.site_name }}{% else %}{{ title|striptags }} | {{ config.site_name }}{% endif %}</title>
+  {%- if config.site_description %}<meta name="description" content="{{ config.site_description }}">{% endif %}
+  {%- if page and page.canonical_url %}<link rel="canonical" href="{{ page.canonical_url }}">{% endif %}
+  <link rel="icon" href="{{ 'assets/feather.svg'|url }}" type="image/svg+xml">
+  <script>
+    /* The theme that the reader picked, set before the first paint. */
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('fw-docs-theme'); } catch (e) {}
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ 'assets/css/fonts.css'|url }}">
+  <link rel="stylesheet" href="{{ 'assets/css/tokens.css'|url }}">
+  <link rel="stylesheet" href="{{ 'assets/css/site.css'|url }}">
+  <link rel="stylesheet" href="{{ 'assets/css/code.css'|url }}">
+  <link rel="stylesheet" href="{{ 'assets/demos/kit.css'|url }}">
+</head>
+<body>
+<a class="skip" href="#content">Skip to the page</a>
+<div class="shell{% if page and page.file and page.file.src_uri == 'index.md' %} home{% elif not has_details %} no-details{% endif %}" data-show="main">
+
+  {#- The app bar: the logo well, the places, and the theme key. -#}
+  <nav class="appbar" aria-label="Places">
+    <a class="logo-well" href="{{ nav.homepage.url|url if nav.homepage else '.'|url }}" aria-label="{{ config.site_name }}, home">
+      <span class="well"><span class="monogram">F</span></span>
+    </a>
+    <div class="places">
+      {%- for item in nav %}
+      {%- set first = item.children[0] if item.children else item %}
+      {%- set icon = (config.extra.places or {}).get(item.title, 'page') %}
+      {%- set target = first %}
+      {%- if target.children %}{% set target = target.children[0] %}{% endif %}
+      <a class="place{% if place.here and item == place.item %} on{% endif %}" href="{{ target.url|url }}"{% if place.here and item == place.item %} aria-current="true"{% endif %}>
+        {{ g.glyph(icon) }}
+        <span class="place-label">{{ item.title }}</span>
+      </a>
+      {%- endfor %}
+    </div>
+    <div class="theme-pop pop">
+      <button class="theme-key" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Theme">
+        {{ g.glyph('theme') }}
+        <span class="place-label">Theme</span>
+      </button>
+      <div class="menu menu-theme" role="menu" hidden>
+        <button type="button" role="menuitemradio" data-theme-pick="system" aria-checked="false"><span class="t">Match the system</span></button>
+        <button type="button" role="menuitemradio" data-theme-pick="light" aria-checked="false"><span class="t">Light</span></button>
+        <button type="button" role="menuitemradio" data-theme-pick="dark" aria-checked="false"><span class="t">Graphite</span></button>
+      </div>
+    </div>
+  </nav>
+
+  {#- The list pane: the find field and the pages of the place. -#}
+  <aside class="pane list" aria-label="Pages of {{ place.item.title if place.item else config.site_name }}">
+    <header class="pane-head">
+      <a class="back to-main" href="#content" data-show-main aria-label="Back to the page">{{ g.glyph('back') }}</a>
+      <h2 class="t-heading">{{ place.item.title if place.item else config.site_name }}</h2>
+      {%- if place.item and place.item.children %}
+      {%- set count = namespace(n=0) %}
+      {%- for c in place.item.children %}{% if c.children %}{% set count.n = count.n + c.children|length %}{% else %}{% set count.n = count.n + 1 %}{% endif %}{% endfor %}
+      <span class="chip chip-plain" title="{{ count.n }} pages">{{ count.n }}</span>
+      {%- endif %}
+    </header>
+    <div class="groove" aria-hidden="true"></div>
+    <div class="list-find">
+      <div class="find recess" role="search">
+        {{ g.glyph('search', 18) }}
+        <label class="sr" for="find">Find in the docs</label>
+        <input id="find" type="search" placeholder="Find in the docs" autocomplete="off" spellcheck="false" aria-controls="find-results" aria-expanded="false">
+        <kbd class="find-hint" aria-hidden="true">/</kbd>
+      </div>
+      <div class="menu find-results" id="find-results" role="listbox" aria-label="Results" hidden></div>
+    </div>
+    <div class="list-body">
+      {%- if place.item and place.item.children %}
+      <ul class="rows">
+        {%- for c in place.item.children %}
+        {%- if c.children %}
+        <li class="group">
+          <div class="group-head"><span class="t-caption">{{ c.title }}</span><span class="group-count">{{ c.children|length }}</span></div>
+          <ul class="rows">
+            {%- for p in c.children %}
+            <li><a class="row{% if p.active %} sel{% endif %}" href="{{ p.url|url }}"{% if p.active %} aria-current="page"{% endif %}>{{ p.title }}</a></li>
+            {%- endfor %}
+          </ul>
+        </li>
+        {%- else %}
+        <li><a class="row{% if c.active %} sel{% endif %}" href="{{ c.url|url }}"{% if c.active %} aria-current="page"{% endif %}>{{ c.title }}</a></li>
+        {%- endif %}
+        {%- endfor %}
+      </ul>
+      {%- endif %}
+    </div>
+    {%- if config.extra.built_from %}
+    <footer class="list-foot readout">
+      <span class="t-meta">Written from main</span>
+      <dl class="built">
+        {%- for b in config.extra.built_from %}
+        <div><dt>{{ b.name }}</dt><dd><a href="{{ b.url }}" title="{{ b.subject }}"><code>{{ b.commit }}</code></a></dd></div>
+        {%- endfor %}
+      </dl>
+    </footer>
+    {%- endif %}
+  </aside>
+
+  {#- The page. -#}
+  <main class="pane page" id="content" tabindex="-1">
+    <header class="pane-head pane-head-title">
+      {%- if place.item %}
+      <a class="back to-list" href="#" data-show-list aria-label="Pages of {{ place.item.title }}">{{ g.glyph('back') }}<span class="back-word">{{ place.item.title }}</span></a>
+      {%- endif %}
+      <h1 class="t-title">{% block heading %}{{ title }}{% endblock %}</h1>
+    </header>
+    <div class="groove" aria-hidden="true"></div>
+    <article class="doc{% if page and page.meta and page.meta.wide %} wide{% endif %}">
+      {%- if page and page.toc and (page.toc|first) and (page.toc|first).children|length > 1 %}
+      <details class="toc-inline">
+        <summary>On this page</summary>
+        <ul>
+          {%- for h in (page.toc|first).children %}{% if h.id != 'sources' %}
+          <li><a href="{{ h.url }}">{{ h.title }}</a></li>
+          {%- endif %}{% endfor %}
+        </ul>
+      </details>
+      {%- endif %}
+      {% block content %}{{ page.content if page else '' }}{% endblock %}
+      {%- if page and page.meta and page.meta.sources_html %}
+      <section class="sources-inline" aria-labelledby="sources-inline-h">
+        <h2 id="sources-inline-h">Sources</h2>
+        {{ page.meta.sources_html }}
+      </section>
+      {%- endif %}
+      {%- if page and (page.previous_page or page.next_page) %}
+      <nav class="pager" aria-label="Previous and next page">
+        {%- if page.previous_page %}
+        <a class="pager-link prev" href="{{ page.previous_page.url|url }}" rel="prev"><span class="t-meta">Previous</span><span class="t-sub">{{ page.previous_page.title }}</span></a>
+        {%- else %}<span></span>{% endif %}
+        {%- if page.next_page %}
+        <a class="pager-link next" href="{{ page.next_page.url|url }}" rel="next"><span class="t-meta">Next</span><span class="t-sub">{{ page.next_page.title }}</span></a>
+        {%- endif %}
+      </nav>
+      {%- endif %}
+    </article>
+  </main>
+
+  {#- The details pane: On this page, and the sources of the page. -#}
+  <aside class="pane details" aria-label="About this page">
+    <header class="pane-head">
+      <h2 class="t-heading">On this page</h2>
+    </header>
+    <div class="groove" aria-hidden="true"></div>
+    <div class="details-body">
+      {%- if page and page.toc and (page.toc|first) %}
+      <ul class="toc">
+        {%- for h in (page.toc|first).children %}{% if h.id != 'sources' %}
+        <li><a href="{{ h.url }}" data-toc="{{ h.id }}">{{ h.title }}</a>
+          {%- if h.children %}
+          <ul>
+            {%- for h3 in h.children %}
+            <li><a href="{{ h3.url }}" data-toc="{{ h3.id }}">{{ h3.title }}</a></li>
+            {%- endfor %}
+          </ul>
+          {%- endif %}
+        </li>
+        {%- endif %}{% endfor %}
+      </ul>
+      {%- endif %}
+    </div>
+    {%- if page and page.meta and page.meta.sources_html %}
+    <section class="details-sources" aria-labelledby="sources-h">
+      <div class="sources-head"><h2 class="t-sub" id="sources-h">Sources</h2><span class="chip chip-plain">{{ page.meta.sources_count }}</span><span class="help"><button class="help-key" type="button" aria-expanded="false" aria-label="What are the sources?">?</button><span class="help-pop" role="note" hidden>The files of the repositories that this page was written from. If the page and the code disagree, the code wins.</span></span></div>
+      {{ page.meta.sources_html }}
+    </section>
+    {%- endif %}
+  </aside>
+</div>
+<script>window.FW_DOCS = { base: "{{ base_url }}" };</script>
+<script src="{{ 'assets/js/site.js'|url }}" defer></script>
+<script type="module" src="{{ 'assets/demos/kit.js'|url }}"></script>
+</body>
+</html>

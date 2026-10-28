@@ -1,0 +1,6 @@
+{% extends "main.html" %}
+{% block heading %}Page not found{% endblock %}
+{% block content %}
+<p>No page lives at this address. It may have moved when the site was rebuilt.</p>
+<p>Use Find in the docs, or start from the <a href="{{ nav.homepage.url|url if nav.homepage else '.'|url }}">home page</a>.</p>
+{% endblock %}

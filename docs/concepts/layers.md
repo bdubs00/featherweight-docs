@@ -1,89 +1,78 @@
 # The four layers
 
-Featherweight is four layers that stack. Agent Substrate makes sealed boxes. Google AX hands the boxes out and keeps the list. The kernel is the one worker who lives inside a box. The workbench is the front desk outside every box, where people come in.
+Featherweight is four layers that stack. You talk to the workbench. The workbench sends work into sandboxes, and in each sandbox one kernel runs one agent. Google AX and Agent Substrate make those sandboxes. A sandbox with nothing to do sleeps for free, and new work wakes it.
 
-```mermaid
-flowchart TB
-    person["A person in Claude Code, an IDE, or a browser"]
-    subgraph outside["Outside the sandboxes (Kubernetes)"]
-        front["fw-workbench, the front<br/>sign-in, grants, MCP server, web page,<br/>fleet view, suspend controller, token broker"]
-        nats["NATS<br/>jobs in, events out"]
-        axapi["AX API server<br/>Tasks and Workspaces"]
-        router["atenet router<br/>the only door into a sandbox"]
-    end
-    subgraph substrate["Agent Substrate (gVisor sandboxes)"]
-        subgraph task1["AX Task"]
-            fw1["fw, the kernel, PID 1<br/>run loop, budget, policy"]
-            ws1["/workspace<br/>ledger.jsonl, files"]
-        end
-        subgraph task2["AX Task (child)"]
-            fw2["fw"]
-            ws2["/workspace"]
-        end
-    end
-    person -->|MCP or HTTPS| front
-    front -->|list and suspend| axapi
-    front -->|requests, decisions| router
-    front <-->|enqueue, egress| nats
-    router --> fw1
-    router --> fw2
-    fw1 <-->|intake, egress| nats
-    fw1 -->|spawn a child| axapi
-    fw1 -->|follow the child| router
-    fw1 --- ws1
-    fw2 --- ws2
-```
+<div class="demo" data-demo="layers" markdown>
 
-## Agent Substrate
+One job in seven steps. Claude Code calls the MCP tool `enqueue`, and the workbench queues twelve jobs. The workbench wakes the sleeping Task through the atenet router, and the kernel takes one job. The kernel gets a short-lived token from the workbench to act as you. A policy rule asks you before `git push`, so the kernel appends `fw.approval.requested`, and the workbench suspends the idle Task. Your decision wakes the Task through the router, and the run goes on. At the end, `fw.run.finished` goes out on the egress stream, and you read the result with `run_result`.
 
-Agent Substrate runs on the cluster and makes sandboxes. A sandbox is a sealed container that runs under gVisor, a user-space Linux kernel that keeps the host safe from whatever runs inside. Substrate calls a sandbox an actor. Each actor has one folder, `/workspace`, that Substrate can freeze and thaw. A suspend takes a snapshot of `/workspace` and frees the CPU and the memory. A resume restores that snapshot into a fresh container.
+</div>
 
-Substrate also runs the atenet router, the only door into an actor. A request names its actor in the header `ate-target-actor`. If the actor sleeps, the router wakes it first. And Substrate holds one egress policy per actor: a list of hosts that the actor can talk to. The egress gateway blocks everything else. A policy can also inject a credential into an outbound request, so a key never has to enter the sandbox.
+The demo shows one migrator Task, but a fleet has many. Each layer below has one job, and none of them knows the inside of the layer under it.
 
-## Google AX
+## Agent Substrate: sandboxes that sleep
 
-AX sits on top of Substrate and makes it feel like Kubernetes. You write a YAML file with a Task, which names the image and the environment variables, and a Workspace, which names the files and git repositories to put in `/workspace`. Then `ax apply` creates them. The commands `ax suspend`, `ax resume`, and `ax ssh` do what their names say.
+Agent Substrate runs on a Kubernetes cluster and makes sandboxes. A sandbox is a sealed container that runs under gVisor, a user-space Linux kernel that keeps the host safe from the code inside. Substrate calls a sandbox an actor.
 
-AX treats whatever runs inside the Task as a black box. It does not know what a model turn is, whether the process works or waits, or when it is safe to suspend. It creates every Task suspended until something resumes it. Featherweight runs a patched AX that adds `spec.egress` to the Task. The Task itself then declares the hosts it can reach, and a child Task inherits that list. See [Platform gaps and patches](../operations/platform-gaps.md).
+Each actor has one folder, `/workspace`, that Substrate can freeze and thaw. A suspend pauses the actor, saves `/workspace`, and frees its CPU and memory. A resume restores that folder into a fresh container. Everything else in the container is lost, so the kernel keeps all of its state in `/workspace`.
 
-## The kernel
+Substrate also runs the atenet router, the only door into an actor. A request names its actor in the header `ate-target-actor`. If the actor sleeps, the router wakes it first. Substrate also holds an egress policy for each actor: the list of hosts that the actor can reach. The egress gateway blocks every other host.
 
-The kernel, the binary `fw`, is the program inside one Task. It runs as PID 1, the first process, so it is the whole container. It is one agent and nothing more. It loads a profile, which is the system prompt, the tools, the model, the budget, and the policy. Then it runs the loop: ask the model, run the tools that the model asked for, repeat.
+## Google AX: Tasks on top of Substrate
 
-The kernel writes every event of that loop to the ledger, an append-only log file in `/workspace`. The ledger survives a suspend because `/workspace` does. So the agent can be frozen in the middle of a task and continue later from the exact event where it stopped. The kernel also knows when it has nothing to do and says so on `GET /v1/status`. It creates a child Task through the AX API when it delegates. It asks the front for a short-lived token when a tool must act as the person who started the run.
+AX puts a Kubernetes-like interface on Substrate. You write two objects. A Task names the image and its environment variables. A Workspace names the files and the git repositories for `/workspace`. `ax apply` creates them. `ax suspend`, `ax resume`, and `ax ssh` do what their names say.
 
-Work reaches the kernel in two ways: a direct request through the router, or a job from a NATS queue. The kernel takes jobs from an intake queue and reports its events on an egress stream. The same binary also runs as a plain process on a laptop, as a container, or as a Go library. See [The run lifecycle](run-lifecycle.md), [The ledger](ledger.md), and [Safeguards](safeguards.md).
+AX treats the program inside a Task as a black box. It does not know what a model turn is. It cannot tell whether the program works or waits, or whether a suspend is safe now. Featherweight runs a patched AX that adds `spec.egress` to a Task, so the Task itself lists the hosts that it can reach. See [Platform gaps and patches](../operations/platform-gaps.md).
 
-## The workbench
+## The kernel: one agent in one Task
 
-The workbench, the binary `fw-workbench`, runs outside every box as a normal Kubernetes Deployment. The fleet design calls it the front. It signs people in with OpenID Connect. It keeps their OAuth grants in an encrypted store, so a refresh token never enters a sandbox. It serves the MCP server at `/mcp` and the web page at `/ui`. The tools that Claude Code sees, such as `run`, `enqueue`, `batch`, `approve`, and `run_result`, are the workbench.
+The kernel, the binary `fw`, is the program inside one Task. It runs as the first process of the container, and it is one agent and nothing more. It loads a profile, a named agent configuration: a system prompt, tools, a model, a budget, and a policy. Then it runs the loop: it asks the model, runs the tools that the model asked for, and asks again.
 
-The workbench reads the list of Tasks from the AX API and the events from the bus to show the fleet. It puts jobs on the queues. It sends an interactive request to a Task through the router. It suspends a Task that reports idle, and it wakes a sleeping Task when a job arrives for it. It mints the short-lived tokens that the workers ask for. It keeps pools, a fixed number of Tasks that run one profile. It holds almost no state of its own: AX holds the Tasks, Substrate holds `/workspace`, the ledger inside each Task holds the run, and Prometheus and Grafana hold the metrics. See [The fleet](fleet.md) and [Identity](identity.md).
+The kernel writes every step of that loop to the ledger, an append-only log in `/workspace`. The ledger survives a suspend because `/workspace` does. So a frozen agent goes on later from the exact step where it stopped. The kernel reports on `GET /v1/status` whether it has work. When a tool must act as a person, the kernel asks the workbench for a short-lived token.
 
-The same binary also runs on a laptop with every verb of `fw`, the page, and the MCP server over standard input and output. See [Run the workbench on your machine](../getting-started/workbench-local.md).
+Work reaches the kernel in two ways: a request through the router, or a job from a queue on the bus. The same binary also runs as a plain process on a laptop. See [The run lifecycle](run-lifecycle.md), [The ledger](ledger.md), and [Safeguards](safeguards.md).
 
-## One job through all four layers
+## The workbench: the front for people
 
-A person tells Claude Code to migrate twelve Puppet modules.
+The workbench, the binary `fw-workbench`, runs outside every sandbox as a normal Kubernetes Deployment. In a fleet, its role is called the front, because it stands in front of the sandboxes. The pages on deployment use that name. It signs people in, keeps their grants to services, and serves the web page and the MCP server. Bossmode, its web page, is where you answer decisions and drive bridges of agents. Claude Code reaches the same fleet through MCP tools such as `run`, `enqueue`, `approve`, and `run_result`.
 
-1. Claude Code calls the `enqueue` tool on the front. The front puts twelve jobs on the queue of the migrator profile, with the identity of the person attached to each one.
-2. The migrator Task is asleep. The front asks AX to resume it. Substrate restores `/workspace` into a fresh container.
-3. The kernel starts as PID 1, rebuilds its state from the ledger, and takes one job from the queue. It runs the loop against the model through the model proxy.
-4. The kernel needs to push a branch to GitHub. The tool acts as the person, so the kernel asks the front for a short-lived token. The refresh token stays in the front.
-5. The kernel hits a policy rule that needs an approval. It writes the approval request to the ledger and reports idle. The front suspends the Task. The Task costs nothing while it waits.
-6. The person approves from Claude Code. The front sends the decision through the router. The router wakes the Task. The kernel reads the ledger and continues the run from the approval.
-7. The run ends. The result goes out on the egress stream. The person reads it with `run_result`. The front suspends the Task again after the idle timeout.
+The workbench reads the Tasks from the AX API and the events of every run from the egress stream of the bus. It puts jobs on the queues, and it wakes the sleeping Tasks that serve a queue. It suspends a Task that stays idle for `workbench.fleet.suspendAfter`, 10 minutes by default. It also answers the token requests of the kernels, so a refresh token never enters a sandbox.
+
+The workbench keeps little state of its own. AX holds the Tasks, Substrate holds each `/workspace`, and the ledger in each Task holds the runs. See [The fleet](fleet.md) and [Identity](identity.md).
+
+??? note "Under the hood"
+    The enqueue path is in `fleet/enqueue.go` of the workbench. A worker of a pool reads the intake of its pool, and a worker of no pool reads `<intake>.<agent>`. A sleeping Task reads no queue, so `WakeFor` in `fleet/suspend.go` sends it a read of `GET /v1/status` through the router. The router wakes the actor, and the front then calls `ResumeTask` so that the AX API learns of the wake. The suspend controller in the same file calls `SuspendTask` on the AX API. The token broker serves `POST /v1/tokens` in `connections/broker.go`.
 
 ## Why the kernel exists beside AX
 
-AX gives you a box and a freezer, and no view of what happens inside the box. Put a general agent framework inside the Task instead, and three things go wrong. The framework keeps the conversation in memory, so a suspend loses the thread. Nothing reports idle, so nothing knows when a suspend is safe. The whole tree of child agents runs on one service credential inside the sandbox. The kernel fixes those three things: a ledger that survives the freeze, an idle signal that makes the freeze automatic, and a token broker with budgets and policy, so that every box acts as a person within bounds. The [product direction](../design/product-direction.md#2-why-this-layer-exists) states the argument in full.
+AX gives you a box and a freezer, and no view of what happens inside the box. Put a general agent framework inside the Task, and three things go wrong. The framework keeps the conversation in memory, so a suspend loses the thread. Nothing reports idle, so nothing can tell that a suspend is safe. And every agent in the box acts with one service credential.
 
-The value shows up when runs are long, when they wait on approvals or sign-ins, when many of them sleep most of the time, and when they fan out into trees. For a short batch job that never waits on a person, a plain container with any agent loop does about as well.
+The kernel fixes those three things. The ledger survives the freeze. The idle signal makes the freeze automatic. The token broker of the workbench, with the budget and the policy of the kernel, lets each agent act as a person within bounds. The [product direction](../design/product-direction.md#2-why-this-layer-exists) states the argument in full.
+
+The kernel helps most with four kinds of work: long runs, runs that wait on people, many runs that sleep most of the time, and runs that fan out into child runs. A short batch job that never waits on a person does about as well in a plain container.
+
+<div class="paths" markdown>
+
+- [The run lifecycle <span>The states of a run, and how it waits and wakes</span>](run-lifecycle.md)
+- [The ledger <span>What survives a crash, and how a new process goes on</span>](ledger.md)
+
+</div>
 
 ## Sources
 
-- featherweight-kernel/README.md
-- featherweight-kernel/docs/KERNEL_MAP.md
-- featherweight-workbench/README.md
-- featherweight-workbench/docs/PRODUCT_DIRECTION.md
-- ax/README.md
+- `featherweight-kernel/README.md`
+- `featherweight-kernel/docs/ARCHITECTURE.md` (sections 3, 11.5)
+- `featherweight-kernel/docs/KERNEL_MAP.md`
+- `featherweight-kernel/surface/view/status.go`
+- `featherweight-kernel/tokens/tokens.go`
+- `featherweight-workbench/README.md`
+- `featherweight-workbench/fleet/enqueue.go`
+- `featherweight-workbench/fleet/queues.go`
+- `featherweight-workbench/fleet/suspend.go`
+- `featherweight-workbench/fleet/forward.go`
+- `featherweight-workbench/fleet/types.go`
+- `featherweight-workbench/connections/broker.go`
+- `featherweight-workbench/surface/mcp/tools.go`
+- `featherweight-workbench/docs/PRODUCT_DIRECTION.md`
+- `ax/README.md`
+- `ax/pkg/apis/v1alpha1/types.go`

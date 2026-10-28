@@ -1,37 +1,75 @@
 # Featherweight
 
-Featherweight runs agents as durable, sandboxed workers on Google AX and Agent Substrate. An agent runs inside one sandbox, keeps an append-only record of everything it does, sleeps at no cost while it waits for a person, and wakes up where it left off. A person drives a whole fleet of such agents from Claude Code, an IDE, or a browser.
+Featherweight lets one person run a fleet of AI agents safely. You ask in plain words. Each agent works in a sealed sandbox, asks you before a risky step, and sleeps for free while it waits.
 
-The project is two repositories and one patched platform:
+<div class="demo" data-demo="stack-hero" markdown>
 
-| Repository | Binary | What it is |
-|---|---|---|
-| [featherweight-kernel](https://github.com/bdubs00/featherweight-kernel) | `fw` | One agent inside one AX Task. The run loop, the budget, the policy, the ledger. |
-| [featherweight-workbench](https://github.com/bdubs00/featherweight-workbench) | `fw-workbench` | The front for people, outside the sandboxes. The web page, the sign-in, the MCP server, the fleet view, the connections, the pools. |
-| [bdubs00/ax](https://github.com/bdubs00/ax) | `ax` | A fork of google/ax with the egress patch that the project runs until it lands upstream. |
+You ask for twelve Puppet modules to move to Ansible. The workbench queues twelve jobs and wakes three agents, each in its own sandbox. An agent that needs GitHub gets a short-lived token from the workbench, and your sign-in never enters the sandbox. A call to a host that is not on the allow list is blocked at the wall. An agent that wants to push asks you first and sleeps while it waits. The other agents keep going. You press Allow, the agent wakes where it stopped, and the fleet sleeps again. You pressed two keys.
+
+</div>
+
+## Sealed in a sandbox
+
+Every agent runs in its own sandbox: a gVisor container on Google AX, with a wall around its network. The wall lets the agent reach only the hosts on its allow list.
+
+Your credentials stay outside. The workbench keeps your sign-ins to services such as GitHub. When an agent must act as you, the workbench hands it a short-lived token for that one run.
+
+The agent asks before a risky step. A policy decides each tool call: allow, ask a person, or deny. A budget caps the turns, the tool calls, the time, and the cost of each run. See [Safeguards](concepts/safeguards.md) and [Identity](concepts/identity.md).
+
+## Easy to drive
+
+You talk to agents the way you talk to a team. [Bossmode](guide/index.md), the web page of the workbench, is a chat client whose members are agents. Claude Code and other MCP clients reach the same fleet through MCP tools.
+
+A decision is one key. A card shows what the agent wants to do in plain words, and you allow it or deny it from wherever you are. Every step that an agent took is in its ledger, an append-only log that you can read. See [Decisions and activity](guide/decisions.md).
+
+## More done per person
+
+One request can fan out to many agents at once. They work in parallel, each in its own sandbox, and they keep going while you are away.
+
+A waiting agent costs nothing. When a run waits for a person, its sandbox goes to sleep. A decision, a new job, or a message wakes it. The run goes on from the exact step where it stopped, also after a crash or a restart. Agents can also start work on their own, on a schedule, through [duties](guide/duties.md). See [The fleet](concepts/fleet.md).
+
+## Try the moment that matters
+
+The scene above has one moment that the rest depends on: an agent waits for you, and your answer wakes it. Here it is to try. Press either key.
+
+<div class="demo" data-demo="decision" markdown>
+
+A sleeping agent, `migrator-2`, asks to run `git push origin migrate/nginx`. Its run waits, and its sandbox is suspended. If you allow the command, the workbench sends the decision to the sandbox, and the sandbox wakes. The kernel reads its ledger, and the run goes on from the step where it stopped.
+
+</div>
+
+## The parts
+
+Featherweight is two programs and one web page, on top of two platforms.
+
+| Part | What it is |
+|---|---|
+| The kernel, `fw` | One agent inside one sandbox. It runs the model loop and keeps the ledger. It checks every tool call against the policy and the budget. It also tells the platform that it is idle. |
+| The workbench, `fw-workbench` | The program for people, outside the sandboxes. It signs people in, keeps their credentials, queues jobs, serves MCP, and puts sandboxes to sleep and wakes them. |
+| Bossmode | The web page of the workbench. You answer decisions, run [bridges](guide/bridges.md) of agents, and set duties there. |
+| Google AX and Agent Substrate | The platforms. Substrate makes the sealed sandboxes that can sleep. AX hands them out as Tasks. The project runs a [patched AX](operations/platform-gaps.md). |
+
+[The four layers](concepts/layers.md) traces one job through all of them.
 
 ## Where to start
 
-If you want to understand the system, read [The four layers](concepts/layers.md) first. It explains Substrate, AX, the kernel, and the workbench in one page, with one job traced through all four. Then read [The run lifecycle](concepts/run-lifecycle.md) and [The ledger](concepts/ledger.md).
+<div class="paths" markdown>
 
-If you want to run something, pick the page that matches your goal.
+- [Understand the system <span>The four layers, with one job traced through them</span>](concepts/layers.md)
+- [Use bossmode <span>The places of the page and what each one is for</span>](guide/index.md)
+- [Run one agent on your laptop <span>Build fw and start a run</span>](getting-started/kernel-local.md)
+- [Drive a fleet from Claude Code <span>The MCP tools that start, watch, and decide runs</span>](getting-started/from-claude-code.md)
+- [Deploy a fleet <span>A workbench, a queue, and workers on AX</span>](deployment/fleet.md)
+- [Look up a fact <span>Commands, configuration, routes, and tools</span>](reference/fw-commands.md)
 
-| Goal | Page |
-|---|---|
-| Run one agent on your laptop | [Run the kernel on your machine](getting-started/kernel-local.md) |
-| Add the web page and the MCP server | [Run the workbench on your machine](getting-started/workbench-local.md) |
-| Drive a fleet from Claude Code | [Use a fleet from Claude Code](getting-started/from-claude-code.md) |
-| Put one agent in an AX Task | [One Task on AX](deployment/one-task-on-ax.md) |
-| Deploy a fleet with a front, a queue, and workers | [A fleet](deployment/fleet.md) |
-| Find a verb, a flag, a key, a route, or a tool | [Reference](reference/fw-commands.md) |
-| Work out why a Task or a run misbehaves | [Debugging a Task](operations/debugging.md) |
+</div>
 
-The [Design documents](design/index.md) are the full architecture of the kernel and the workbench, copied from the repositories. They are the source of truth for a design question. The pages of this site explain and point; they do not replace them.
+## Sources
 
-## The idea in four sentences
-
-AX gives an agent a sandbox with a folder that survives a freeze, a router that wakes a sleeping sandbox, and a wall around its network. AX does not know what happens inside the sandbox. The kernel is the process inside: it runs the agent, writes every step to a ledger in that folder, says when it is idle, and keeps every child and every tool call within a budget and a policy. The workbench is the front desk outside: it signs people in, holds their credentials, serves Claude Code and the browser, and freezes and wakes the sandboxes.
-
-## Status
-
-As of 2026-10-20, stages 1 to 4 of the [kernel roadmap](design/kernel-roadmap.md) are done and verified on a cluster, together with stage 5 items 1 and 3. Stage 5 item 2, workload identity for a Task, waits on Agent Substrate. The [platform gaps](operations/platform-gaps.md) page lists what the platforms do not do yet and how the project works around each gap.
+- `featherweight-kernel/README.md`
+- `featherweight-kernel/fw/projection.go`
+- `featherweight-kernel/fw/turn.go`
+- `featherweight-workbench/README.md`
+- `featherweight-workbench/docs/ARCHITECTURE.md`
+- `featherweight-workbench/fleet/types.go`
+- `featherweight-bossmode/README.md`

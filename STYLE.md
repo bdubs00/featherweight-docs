@@ -4,11 +4,27 @@ Every page follows these rules. A subagent that writes a page reads this file fi
 
 ## Truth
 
-1. Every fact comes from the source code or the documents of the two repositories next to this one: `../featherweight-kernel` and `../featherweight-workbench`. Do not invent a flag, a key, a route, a tool, a default, or a step.
+1. Every fact comes from the source code or the documents of the three repositories next to this one: `../featherweight-kernel`, `../featherweight-workbench`, and `../featherweight-bossmode` (the web page). Do not invent a flag, a key, a route, a tool, a default, or a step.
 2. Before you name a command, a flag, a configuration key, an environment variable, a route, or an MCP tool, find it in the code. For the kernel verbs, read `cli/*.go` and `cmd/fw/*.go`. For the configuration keys, read `examples/fw.yaml` and `config/`. For the workbench, read `cmd/fw-workbench/*.go`, the packages, and `examples/`.
 3. If a document and the code disagree, the code wins. Say so in one sentence.
 4. If you cannot verify a claim, leave it out, or mark it `(unverified)` in the text.
-5. End every page with a `## Sources` section: a list of the files you read, as paths relative to the repository root, for example `featherweight-kernel/cli/serve.go`.
+5. End every page with a `## Sources` section: a list of the files you read, one path per item in backticks, relative to the folder of the repositories, for example `featherweight-kernel/cli/serve.go`.
+
+## Approachability
+
+The first version of this site was accurate but hard to read. These rules come first when they conflict with habit.
+
+1. Every page opens with a lede: one to three sentences in plain words that say what the thing is and why the reader cares. The lede holds no code names. The theme sets the first paragraph larger.
+2. Show, then tell. After the lede comes a demo, if a mechanism is worth seeing. Then comes the explanation, then how to use it, then the details.
+3. The running text of a guide page or a concept page names only what the reader types or sees: commands, flags, configuration keys, routes, MCP tools, event types, states, and the words of the bossmode page. Go functions, Go types, and internal file names go in a disclosure at the end of the section, `??? note "Under the hood"`, or only in the Sources list.
+4. One idea per section. A page has three to seven `##` sections, plus a last section, Where to go next. A section that needs more than five paragraphs is two sections.
+5. No Mermaid. A mechanism worth a diagram gets a demo (see `docs/assets/demos/README.md`). A static structure gets a table or a short list.
+6. A table is for reference data with parallel fields. A concept is prose.
+7. Define a term the first time a page uses it, in under ten words, and use the term of the [glossary](docs/glossary.md).
+8. End each page with where to go next: one or two links in the last section, or a `<div class="paths" markdown>` list of links. A link in that list is `[Title <span>one line</span>](page.md)`.
+9. A guide page speaks to the operator in the words of bossmode: places, bridges, seats, duties, decisions. It explains what each key does and what happens after it.
+10. Write a word of the screen as the screen writes it, with its capitals, without quotes and without code: press Run command, open the Duties place, pick Where to reach me. Use code only for what a person types.
+11. A screenshot of bossmode comes in two images, light and graphite, side by side: `![The Fleet place](../assets/shots/x-light.png){ .only-light }` and the same with `{ .only-dark }`. The theme shows the one that matches.
 
 ## Scope
 
@@ -41,5 +57,8 @@ Plain English, in the spirit of ASD-STE100 Simplified Technical English.
 1. One `#` title at the top. Sections with `##`, subsections with `###`. No deeper.
 2. Commands and code in fenced blocks with a language: `sh`, `yaml`, `json`, `go`.
 3. Inline code for a file path, a key, a flag, a route, a tool name, or a value.
-4. The site is MkDocs with the Material theme. Admonitions work: `!!! note`, `!!! warning`, with the body indented four spaces. Mermaid diagrams work in a fenced block with the language `mermaid`.
-5. A page is between 60 and 400 lines. If a topic needs more, it needs two pages: say so in your report instead of writing a longer page.
+4. The site is MkDocs with its own theme in `theme/`, after the look of bossmode (`DESIGN.md`). Admonitions work: `!!! note`, `!!! warning`, `!!! tip`, `!!! danger`, with the body indented four spaces. A disclosure is `??? note "Under the hood"` with the body indented four spaces. Tabs work with `=== "Tab name"`. Mermaid does not work, by choice.
+5. A demo goes on a page as `<div class="demo" data-demo="name" markdown>`, a blank line, a plain fallback paragraph, a blank line, and `</div>`.
+6. A reference page with wide tables can set `wide: true` in front matter (a `---` block at the top of the file). The column then grows to 760 pixels.
+7. The theme moves the `#` title into the pane header and the `## Sources` section into the details pane. Keep both in the Markdown.
+8. A guide page or a concept page is between 60 and 250 lines. A reference page can reach 450 lines. If a topic needs more, it needs two pages: say so in your report instead of writing a longer page.

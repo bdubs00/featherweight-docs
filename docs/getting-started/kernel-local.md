@@ -1,229 +1,180 @@
 # Run the kernel on your machine
 
-The kernel is `fw`, one static Go binary that runs one agent. This page builds it, writes a starter configuration, and runs one task from the terminal. Then it serves the HTTP API and follows a run through its ledger, the append-only log of the run. Nothing on this page needs a cluster.
+This walk-through builds the agent program, gives it a model, and runs one task from your terminal. Then it starts the same agent as a small web service and reads the log of every step it took. You need no cluster and no container.
 
-## Prerequisites
+At the end you have:
 
-You need three things:
+- `fw`, one static binary that runs one agent.
+- A working directory with a starter configuration and a default prompt.
+- One finished run, and its ledger: the append-only log of every step of the run.
 
-- Go 1.27 or newer on your `PATH`. The module file of the kernel names `go 1.27.1`.
-- `make`. The Makefile calls `go` from your `PATH`. To use another toolchain, set `GO`, for example `make GO=/opt/go/bin/go build`.
-- A model. The kernel has no default model. A process without one boots, serves, and refuses every run until `model`, `FW_MODEL`, or the profile of the run names one.
+## Before you start
 
-There are two ways to give the kernel a model:
+You need Go 1.27 or newer, `make`, and `git`. The Makefile calls `go` from your `PATH`. To use another toolchain, set `GO`, for example `make GO=/opt/go/bin/go build`.
 
-| Choice | Selector | Credential | Endpoint |
-|---|---|---|---|
-| The Claude API | `anthropic/<model>` | `ANTHROPIC_API_KEY` | the public API |
-| A local server that speaks the OpenAI chat completions API, such as vLLM, Ollama, or tabbyAPI | `openai/<model>` | `OPENAI_API_KEY` | `providers.openai.baseUrl`, or `FW_PROVIDERS_OPENAI_BASE_URL` |
+You also need a model. The kernel has no default model, because each model costs what its provider charges. Pick one of two:
 
-A local server often needs no key. If `OPENAI_API_KEY` is not set, the OpenAI adapter sends no credential. `fw doctor` still reports the missing variable as a problem. If your server needs no key, set the variable to any value.
+| Choice | Model selector | Credential |
+|---|---|---|
+| The Claude API | `anthropic/<model>`, such as `anthropic/claude-opus-5-5` | `ANTHROPIC_API_KEY` |
+| A local server of the OpenAI chat API, such as vLLM, Ollama, or tabbyAPI | `openai/<model>` | `OPENAI_API_KEY`, which a local server can ignore |
 
-## Build
+## Build fw and write a starter
 
-Clone the repository and build the binary:
+1. Clone the repository and build the binary:
 
-```sh
-git clone https://github.com/bdubs00/featherweight-kernel
-cd featherweight-kernel
-make build
-```
+    ```sh
+    git clone https://github.com/bdubs00/featherweight-kernel
+    cd featherweight-kernel
+    make build
+    ```
 
-`make build` writes `bin/fw`. `make test` runs every test with the race detector. Without a build tag the binary carries every driver. `TAGS=lean` builds the core alone, and each driver comes back with its own tag, for example `make build TAGS=lean,openai`.
+    `make build` writes `bin/fw`. Run `./bin/fw --help` to see every verb. Every later step runs `./bin/fw` from the directory that holds your work.
 
-## Write a configuration with fw init
+2. Write a starter configuration in the directory of your work:
 
-Run `fw init` in the directory that holds your work:
+    ```sh
+    ./bin/fw init
+    ```
 
-```sh
-./bin/fw init
-```
+    You see this:
 
-It writes and creates these paths, and it never overwrites a file:
+    ```text
+    wrote fw.yaml
+    wrote prompts/default.md
+    made  agents/
+    made  skills/
+    A model must be set: without model in fw.yaml, FW_MODEL, or the model of a profile, fw refuses every run.
+    next: set model in fw.yaml or export FW_MODEL, export the credential of its provider, then run fw doctor and fw run "hello"
+    ```
 
-| Path | What |
-|---|---|
-| `fw.yaml` | the starter configuration, with one comment per key |
-| `prompts/default.md` | the default system prompt |
-| `agents/` | one profile file per agent, empty at first |
-| `skills/` | one directory with a `SKILL.md` file per skill, empty at first |
+    `fw init` never overwrites a file, and `fw init <dir>` writes into another directory. `fw.yaml` has one comment per key. It sets `home: .`, so runs, notes, agents, and skills live next to it. It names one profile, `default`, a named agent setup with its prompt and tools.
 
-`fw init <dir>` writes into another directory. The starter sets `home: .`, so the directory of `fw.yaml` is the home of the process. It also sets `effort: high`, the built-in tool list, the budget, `compaction.at`, the time keys, and one profile named `default`. The kernel loads the file at once, so a broken starter fails here and not later.
+3. Set the model. Remove the `#` of one `model` line in `fw.yaml`, or export it, with the credential of its provider:
 
-The starter sets no model, because a paid model is never a built-in choice. It shows one commented `model` line for each provider, and `fw init` prints `A model must be set`. Set a model before the first run. Remove the `#` of one `model` line in `fw.yaml`, or export `FW_MODEL`:
+    ```sh
+    export FW_MODEL=anthropic/claude-opus-5-5
+    export ANTHROPIC_API_KEY=...
+    ```
 
-```sh
-export FW_MODEL=anthropic/claude-opus-5-5
-```
+    For a local server, name the model and the address of the server:
 
-To use a local server instead of the Claude API, set the model and add the endpoint:
+    ```yaml
+    model: openai/qwen3-32b
+    providers:
+      openai:
+        baseUrl: http://127.0.0.1:8000/v1
+    ```
 
-```yaml
-model: openai/qwen3-32b
-providers:
-  openai:
-    baseUrl: http://127.0.0.1:8000/v1
-```
+    Every key of `fw.yaml` maps to a variable by upper snake case, such as `FW_PROVIDERS_OPENAI_BASE_URL`, and a variable wins over the file. `fw env` lists every variable, and `fw config` prints the resolved configuration with secrets masked.
 
-The same two keys work as variables: `FW_MODEL` and `FW_PROVIDERS_OPENAI_BASE_URL`. Every key of `fw.yaml` maps to a variable by upper snake case, and a variable wins over the file. `fw env` prints every variable, and `fw config` prints the resolved configuration with secrets masked.
+## Check the setup, then run one task
 
-## Check the setup with fw doctor
+1. Check the setup:
 
-Export the credential of your model, then run the doctor:
+    ```sh
+    ./bin/fw doctor
+    ```
 
-```sh
-export ANTHROPIC_API_KEY=...
-./bin/fw doctor
-```
+    The doctor prints one line per check: `ok`, `warn`, or `FAIL`. Every check runs, so one failure hides no other. Before you set a model, the model line warns, and the exit code stays 0:
 
-It prints one line per check, `ok`, `warn`, or `FAIL`. If any check fails, it exits with 1. A `warn` line names a risk of a setup that works, such as a configuration without a model, and the exit code stays 0. Every check runs on its own, so one failure does not hide the others. `-timeout` bounds each check that reaches a provider or a server, 10 seconds by default. The lines are these:
+    ```text
+    ok    configuration: fw.yaml
+    ok    home: . is writable
+    ok    credential: no model is configured, so there is no model credential to check
+    warn  model: none configured, so this process serves and refuses every run until model in fw.yaml, FW_MODEL, or the profile of a run names one; there is no default model
+    ok    ledger: file ledger runs appends and reads
+    ```
 
-| Line | What it checks |
-|---|---|
-| `configuration` | the file loads, or the defaults and the `FW_*` variables apply |
-| `home` | the home directory exists and is writable |
-| `tools user` | the user that runs the processes of tools |
-| `time` | the time zone resolves, with the current time and the gap that starts a time note |
-| `auth`, `auth token` | the authentication modes, and whether `FW_API_TOKEN` is set |
-| `tls` | the certificate loads, or the listener speaks plain HTTP |
-| `access` | the access default and the number of admins |
-| `credential` | the secret of the provider of the model is set, without printing it |
-| `model` | the model opens, and for a provider that lists its models, the name is in the list |
-| `tool sources` | each MCP server and A2A peer answers `tools/list` |
-| `tokens`, `telemetry`, `bus` | the token broker, the OTLP export, and the bus driver |
-| `ledger` | the ledger appends one event and reads it back |
-| `skills` | each skills directory exists and loads |
-| `memory` | the scope and the index of the memory, and the count of the notes of the profile `default` |
+    With a model, the line `credential` says whether the variable of the key is set, and the line `model` opens the model. If any line fails, the doctor exits with 1. `-timeout` bounds each check that reaches a provider, 10 seconds by default.
 
-If a local server does not know the name you set, the `model` line names close matches.
+    !!! note
+        With a local server and no `OPENAI_API_KEY`, the doctor fails the line `credential`. The adapter sends no key and works all the same. Set the variable to any value.
 
-## Run one task with fw run
+2. Give the agent one task:
 
-Give the kernel one task:
+    ```sh
+    ./bin/fw run "Which file in this directory is the largest?"
+    ```
 
-```sh
-./bin/fw run "List the files in this directory and say which one is the largest."
-```
+    `fw run` prints one line per event to standard error and the answer to standard output. The exit code is 0 for a completed run, 1 for a failed run, and 2 for a canceled run.
 
-`fw run` prints one line per event to standard error and the final answer to standard output. The words of the input are joined by spaces, and `-` reads the input from standard input. The exit code is 0 for a completed run, 1 for a failed run, and 2 for a canceled run. If the run stops at a budget limit, the last line on standard error names the limit and the flag or key that raises it.
+3. Answer the approval. The default policy asks before a tool that can change things, and `bash` is such a tool. The terminal shows the call and waits:
 
-The flags shape the run without a change to the configuration:
+    ```text
+    approval ap_7f3: tool bash
+      input: {"command":"ls -lS"}
+      reason: rule: ask destructive
+    allow? [y/N]
+    ```
 
-| Flag | Meaning |
-|---|---|
-| `-agent <name>` | the profile, else `$FW_AGENT`, else `default` |
-| `-system <text or @path>` | the system prompt, which replaces the prompt of the profile |
-| `-instructions <text or @path>`, `-i` | text that follows the system prompt, repeatable |
-| `-tools <globs>` | comma-separated globs over tool names, for example `files,git.*` |
-| `-skills <globs>` | comma-separated globs over skill names, and `none` allows no skill |
-| `-model <selector>` | a `provider/model` selector, or a name from `models` |
-| `-effort <level>` | `low`, `medium`, `high`, `xhigh`, or `max` |
-| `-time-zone <zone>` | an IANA zone such as `America/Chicago` |
-| `-max-turns`, `-deadline`, `-max-tool-calls` | three of the budget limits, for example `-deadline 30m` |
-| `-json` | print the run object as JSON instead of the output |
-| `-no-approve` | deny every approval and question without asking |
+    Type `y` to allow. Any other answer denies, and the model reads the denial. If standard input is not a terminal, `fw run` denies every approval and says why.
 
-The global flags come before or after the verb: `-config <file>`, `-home <dir>`, `-listen <address>`, and `-log <level>`.
+The flags of `fw run` shape one run without a change to `fw.yaml`. The common ones are `-model`, `-system`, `-i` for instructions, `-tools`, `-max-turns`, `-deadline`, and `-json`. `./bin/fw run -h` lists them all, and [fw commands](../reference/fw-commands.md) explains each.
 
-### How an approval looks on the terminal
+## Serve the agent and read its ledger
 
-The default policy asks before a destructive tool call, and `bash` is destructive. The first run above therefore asks you on the terminal:
+1. Start the agent as a service. The default authentication mode is `token`, so set the bearer token first:
 
-```
-approval ap_7f3: tool bash
-  input: {"command":"ls -lS"}
-  reason: rule: ask destructive
-allow? [y/N]
-```
+    ```sh
+    export FW_API_TOKEN=secret-token
+    ./bin/fw serve
+    ```
 
-Type `y` or `yes` to allow. Any other answer denies, and the model reads the denial. A question from the tool `ask_user` reads `question from tool ask_user: ...` and takes one line. If the question has a form schema, the answer is one line of JSON. An empty line declines. If standard input is not a terminal, `fw run` denies every approval and says why.
+    One listener, `:8080` by default, serves the API at `/v1`, the A2A server, `/metrics`, `/healthz`, and `/readyz`. `-listen` changes the address. A call without the token gets 401.
 
-## Serve the API with fw serve
+2. In a second terminal, start a run and wait for it:
 
-`fw serve` needs a bearer token in the default authentication mode, `token`. Export it and start the server:
+    ```sh
+    curl -s -H "Authorization: Bearer secret-token" -H "Content-Type: application/json" \
+         -d '{"input": "Say hello.", "instructions": "Answer in one sentence.", "wait": true}' \
+         http://localhost:8080/v1/runs
+    ```
 
-```sh
-export ANTHROPIC_API_KEY=... FW_API_TOKEN=secret
-./bin/fw serve
-```
+    The answer is the run object, with `id`, `state`, `output`, `pending`, and `usage`. Without a model, the answer is a 400 that says `no model configured`. `GET /v1/status` gives the state of the agent at a glance, with `idle` and the counts of runs.
 
-The one listener, `:8080` by default, serves these routes. `-listen` changes the address, and `-port` the port.
+3. Follow the ledger of the run, with the `id` of the run object:
 
-| Path | What |
-|---|---|
-| `POST /v1/runs`, `GET /v1/runs`, `GET /v1/runs/{id}` | start, list, and read runs, with the bearer token |
-| `GET /v1/runs/{id}/events` | the ledger of a run as server-sent events |
-| `POST /v1/runs/{id}/messages`, `/cancel`, `/fork`, `PATCH .../budget` | a follow-up, a cancel, a branch, a change of the budget |
-| `POST /v1/runs/{id}/approvals/{approval}` | decide a pending approval |
-| `GET /v1/agents`, `/v1/tools`, `/v1/skills`, `/v1/status` | the profiles, the tools, the skills, and the state of the agent |
-| `/.well-known/agent-card.json`, `/a2a/jsonrpc`, `/a2a/` | the A2A server |
-| `/metrics` | Prometheus, without authentication |
-| `/healthz`, `/readyz` | health |
+    ```sh
+    ./bin/fw events <id> --follow --format text
+    ```
 
-Start a run and wait for it:
+    `fw events` reads the ledger file directly, read-only, so it works while `fw serve` runs. `--follow` prints until the run finishes. The same events arrive as server-sent events on `GET /v1/runs/{id}/events`.
 
-```sh
-curl -s -H "Authorization: Bearer secret" -H "Content-Type: application/json" \
-     -d '{"input": "Say hello.", "instructions": "Answer in one sentence.", "wait": true}' \
-     http://localhost:8080/v1/runs
-```
+4. Decide an approval over the API. A run that waits has the state `input-required`, and `pending` names the approval:
 
-The answer is the run object: `id`, `agent`, `state`, `input`, `output`, `pending`, `usage`, and `seq`. With `"wait": false`, the call returns the run at once, and `GET /v1/runs/{id}` reads it later.
+    ```sh
+    curl -s -H "Authorization: Bearer secret-token" -H "Content-Type: application/json" \
+         -d '{"decision": "allow"}' http://localhost:8080/v1/runs/<id>/approvals/<approval>
+    ```
 
-## Follow a run with fw events
+    The decision is an event of the ledger, so it survives a restart. The run goes on after it.
 
-Take the `id` from the run object and follow its ledger:
+Only one process writes a ledger. If `fw serve` runs, a second `fw run` in the same directory fails with `fw: file ledger: another writer owns this root`. Stop the server first, or use another directory.
 
-```sh
-./bin/fw events <id> --follow
-```
+## Where things are kept
 
-`fw events` opens the ledger directly, without a kernel, so it never resumes a run. It opens a file ledger read-only, so it works while `fw serve` owns the ledger. `--follow` keeps printing until the run finishes. `--format text` prints one short line per event with its time instead of the JSON of the event. `--from <n>` starts at a sequence number. The same events arrive as server-sent events on `GET /v1/runs/{id}/events`.
-
-### How an approval looks over the API
-
-A run that waits for a decision has the state `input-required`, and `pending` names the approval:
-
-```json
-{"id": "01JA...", "state": "input-required",
- "pending": {"id": "ap_7f3", "tool": "bash", "input": {"command": "git push"}, "reason": "rule: ask destructive"}}
-```
-
-Decide it with the approval route. The body holds `decision`, `allow` or `deny`, and an optional `note`. For a question with a schema, put the answers in `content`.
-
-```sh
-curl -s -H "Authorization: Bearer secret" -H "Content-Type: application/json" \
-     -d '{"decision": "allow"}' http://localhost:8080/v1/runs/<id>/approvals/ap_7f3
-```
-
-The run continues after the decision. The decision is a ledger event, so it survives a restart.
-
-## Where FW_HOME is
-
-The home directory holds everything the process keeps. Without a setting, it is `./.fw`. If `/workspace` exists, it is `/workspace/.fw` instead. The starter sets `home: .`, and the global flag `-home` or the variable `FW_HOME` overrides it. The kernel reads `fw.yaml` from `$FW_CONFIG`, then `./fw.yaml`, then `$FW_HOME/fw.yaml`.
+The home directory holds everything that the process keeps. The starter sets it to `.`. Without a setting, it is `/workspace/.fw` where `/workspace` exists, else `./.fw`. The flag `-home` or `FW_HOME` overrides it. The kernel reads `fw.yaml` from `$FW_CONFIG`, then `./fw.yaml`, then `$FW_HOME/fw.yaml`.
 
 | Path under the home | What |
 |---|---|
-| `runs/<id>/ledger.jsonl` | the ledger of one run, one JSON object per line |
-| `runs/index.jsonl` | the list of run ids |
-| `agents/<name>.yaml` | one profile per file, beside the profiles in `fw.yaml` |
-| `skills/<name>/SKILL.md` | the skills, unless `tools.skills` names other directories |
-| `memory/agents/<profile>/` | the notes of the `memory` tool, or `memory/principals/<profile>/<hash>/` with `tools.memory.scope: principal`, or `memory/shared/` with `shared` |
-| `memory/index/` | the derived search index of a build with the tag `memory_sqlite` |
-| `prompts/default.md` | the system prompt that the starter profile names, written by `fw init` |
+| `runs/<id>/ledger.jsonl` | The ledger of one run, one JSON object per line |
+| `agents/<name>.yaml` | One profile per file, beside the profiles in `fw.yaml` |
+| `skills/<name>/SKILL.md` | The skills that a profile can load |
+| `memory/` | The notes of the tool `memory` |
+| `prompts/default.md` | The system prompt of the starter profile |
 
-The `files` tool and the `bash` tool never open the home directory, the ledger directory, or the configuration file.
+The tools `files` and `bash` never open the home directory, the ledger, or the configuration file.
 
-## Next steps
+## Where to go next
 
-- [The run lifecycle](../concepts/run-lifecycle.md) explains the states and the events you saw on the terminal.
-- [The ledger](../concepts/ledger.md) explains what `fw events` reads and how a run resumes from it.
-- [Safeguards](../concepts/safeguards.md) covers the budget, the policy, and the approval you answered.
-- [Profiles, tools, and skills](../concepts/profiles-and-tools.md) covers `agents/`, `skills/`, and the flags of `fw run`.
-- [Context, memory, and time](../concepts/context-memory-time.md) covers `compaction.at`, `memory/`, and `time.zone`.
-- [fw commands](../reference/fw-commands.md), [Configuration](../reference/configuration.md), and [HTTP API](../reference/http-api.md) list every verb, key, and route.
-- [Run the workbench on your machine](workbench-local.md) adds the page and the MCP server on top of this kernel.
-- [One Task on AX](../deployment/one-task-on-ax.md) runs the same binary as PID 1 in a sandbox.
+<div class="paths" markdown>
+
+- [Run the workbench on your machine <span>Add bossmode and the MCP server on top of this kernel</span>](workbench-local.md)
+- [The run lifecycle <span>The states and the events that you just saw</span>](../concepts/run-lifecycle.md)
+- [One Task on AX <span>The same binary as PID 1 in a sandbox</span>](../deployment/one-task-on-ax.md)
+
+</div>
 
 ## Sources
 
@@ -232,14 +183,11 @@ The `files` tool and the `bash` tool never open the home directory, the ledger d
 - `featherweight-kernel/go.mod`
 - `featherweight-kernel/cli/cli.go`
 - `featherweight-kernel/cli/setup.go`
-- `featherweight-kernel/memory/store.go`
 - `featherweight-kernel/cli/run.go`
 - `featherweight-kernel/cli/doctor.go`
 - `featherweight-kernel/cli/serve.go`
 - `featherweight-kernel/cli/verbs.go`
-- `featherweight-kernel/examples/fw.yaml`
-- `featherweight-kernel/fw/agent.go`
-- `featherweight-kernel/fw/run.go`
+- `featherweight-kernel/fw/policy.go`
+- `featherweight-kernel/fw/ledger.go`
 - `featherweight-kernel/model/openai/openai.go`
-- `featherweight-kernel/surface/native/native.go`
-- `featherweight-kernel/docs/ARCHITECTURE.md`, sections 7.2, 8.2, and 12.5
+- `featherweight-kernel/examples/fw.yaml`
